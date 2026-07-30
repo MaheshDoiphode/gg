@@ -8,18 +8,43 @@ import "strings"
 // with different effort.
 const thinkingSuffix = "-thinking"
 
+// effortSuffixes maps the spellings clients use onto the four levels the
+// endpoints accept. "max" and "xhigh" appear in Claude Code and Kiro configs.
+var effortSuffixes = []struct{ suffix, level string }{
+	{EffortNone, EffortNone},
+	{EffortLow, EffortLow},
+	{EffortMedium, EffortMedium},
+	{EffortHigh, EffortHigh},
+	{"max", EffortHigh},
+	{"xhigh", EffortHigh},
+	{"minimal", EffortNone},
+}
+
+// StripAnnotation removes a trailing bracket hint such as the [1m] context
+// marker Claude Code and Kiro append. No Bedrock model id contains brackets.
+func StripAnnotation(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if !strings.HasSuffix(trimmed, "]") {
+		return trimmed
+	}
+	if i := strings.LastIndex(trimmed, "["); i > 0 {
+		return strings.TrimSpace(trimmed[:i])
+	}
+	return trimmed
+}
+
 // ParseEffort splits a requested model name into its base name and reasoning
 // effort. An empty effort means the client did not ask for one. explicit is
 // true when the level was spelled out, which no real model name does; a bare
 // -thinking suffix is ambiguous with names like moonshotai.kimi-k2-thinking.
 func ParseEffort(name string) (base, effort string, explicit bool) {
-	trimmed := strings.TrimSpace(name)
+	trimmed := StripAnnotation(name)
 	lower := strings.ToLower(trimmed)
 
-	for _, level := range []string{EffortNone, EffortLow, EffortMedium, EffortHigh} {
-		suffix := thinkingSuffix + "-" + level
+	for _, e := range effortSuffixes {
+		suffix := thinkingSuffix + "-" + e.suffix
 		if strings.HasSuffix(lower, suffix) {
-			return trimmed[:len(trimmed)-len(suffix)], level, true
+			return trimmed[:len(trimmed)-len(suffix)], e.level, true
 		}
 	}
 	if strings.HasSuffix(lower, thinkingSuffix) {

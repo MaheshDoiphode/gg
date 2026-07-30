@@ -14,6 +14,10 @@ func TestParseEffort(t *testing.T) {
 		{"xai.grok-4.3-thinking-medium", "xai.grok-4.3", EffortMedium, true},
 		{"xai.grok-4.3-thinking-high", "xai.grok-4.3", EffortHigh, true},
 		{"Grok-Thinking-HIGH", "Grok", EffortHigh, true},
+		// Claude Code and Kiro append a [1m] context hint that is not part of
+		// the model id.
+		{"xai.grok-4.3-thinking-high[1m]", "xai.grok-4.3", EffortHigh, true},
+		{"xai.grok-4.3[1m]", "xai.grok-4.3", "", false},
 		// A real name ending in -thinking is only ambiguous, never explicit, so
 		// the registry can protect it.
 		{"moonshotai.kimi-k2-thinking", "moonshotai.kimi-k2", EffortMedium, false},

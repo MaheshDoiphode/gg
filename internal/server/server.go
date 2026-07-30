@@ -52,6 +52,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.requirePost(w, r, h.handleChatCompletions, errStyleOpenAI)
 	case "/v1/messages", "/messages", "/anthropic/v1/messages":
 		h.requirePost(w, r, h.handleMessages, errStyleAnthropic)
+	case "/v1/messages/count_tokens", "/messages/count_tokens":
+		h.requirePost(w, r, h.handleCountTokens, errStyleAnthropic)
 	case "/v1/models", "/models", "/openai/v1/models":
 		h.handleModels(w, r)
 	case "/health", "":

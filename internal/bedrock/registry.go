@@ -85,7 +85,7 @@ func NewRegistry() *Registry {
 // Resolve maps a client-supplied model name to a Bedrock invoke id.
 // Order: config.json override, exact discovered alias, fuzzy alias, verbatim.
 func (r *Registry) Resolve(name string) string {
-	name = strings.TrimSpace(name)
+	name = StripAnnotation(name)
 	if name == "" {
 		return ""
 	}

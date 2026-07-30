@@ -205,6 +205,25 @@ func (h *Handler) streamChat(w http.ResponseWriter, r *http.Request, key *store.
 	}
 }
 
+// handleCountTokens answers the token-count probe Claude Code makes before
+// each turn to budget its context.
+func (h *Handler) handleCountTokens(w http.ResponseWriter, r *http.Request, _ *store.APIKey) {
+	var req anthropic.Request
+	if err := readBody(r, &req); err != nil {
+		logx.Warnf("POST %s bad request: %v", r.URL.Path, err)
+		writeAPIError(w, errStyleAnthropic, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
+
+	modelID, _ := h.registry.ResolveWithEffort(req.Model)
+	body, err := convert.AnthropicToConverse(&req, modelID, store.DefaultMaxTokens())
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]int{"input_tokens": 0})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"input_tokens": convert.EstimateRequestTokens(body)})
+}
+
 // --------------------------------------------------------- Anthropic messages
 
 func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request, key *store.APIKey) {
