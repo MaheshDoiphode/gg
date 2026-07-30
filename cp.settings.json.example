@@ -1,0 +1,314 @@
+[
+	{
+		"name": "Ollama",
+		"vendor": "ollama",
+		"url": "http://localhost:11434"
+	},
+	{
+		"name": "Copilot",
+		"vendor": "copilot",
+		"settings": {
+			"gpt-5.3-codex": {
+				"reasoningEffort": "xhigh"
+			},
+			"gpt-5.2-codex": {
+				"reasoningEffort": "xhigh"
+			},
+			"gpt-5.5": {
+				"contextSize": 922000
+			},
+			"gemini-3.5-flash": {
+				"reasoningEffort": "minimal",
+				"contextSize": 936000
+			},
+			"claude-sonnet-4.6": {
+				"reasoningEffort": "low"
+			},
+			"claude-opus-4.8": {
+				"reasoningEffort": "max"
+			},
+			"claude-opus-4.8-fast": {
+				"reasoningEffort": "max"
+			},
+			"gpt-5.6-sol": {
+				"contextSize": 922000
+			},
+			"claude-opus-5": {
+				"contextSize": 936000
+			},
+			"gemini-3.6-flash": {
+				"contextSize": 936000
+			},
+			"claude-sonnet-5": {
+				"reasoningEffort": "medium"
+			}
+		}
+	},
+	{
+		"name": "Kiro",
+		"vendor": "customendpoint",
+		"apiKey": "${input:chat.lm.secret.-45f2fc04}",
+		"apiType": "messages",
+		"models": [
+			{
+				"id": "claude-sonnet-5",
+				"name": "Claude Sonnet 5 - Default",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-sonnet-5-thinking-low",
+				"name": "Claude Sonnet 5 - Thinking (Low)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-sonnet-5-thinking-medium",
+				"name": "Claude Sonnet 5 - Thinking (Medium)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-sonnet-5-thinking-high",
+				"name": "Claude Sonnet 5 - Thinking (High)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-sonnet-5-thinking-xhigh",
+				"name": "Claude Sonnet 5 - Thinking (XHigh)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-sonnet-5-thinking-max",
+				"name": "Claude Sonnet 5 - Thinking (Max)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-opus-5",
+				"name": "Claude Opus 5 - Default",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-opus-5-thinking-low",
+				"name": "Claude Opus 5 - Thinking (Low)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-opus-5-thinking-medium",
+				"name": "Claude Opus 5 - Thinking (Medium)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-opus-5-thinking-high",
+				"name": "Claude Opus 5 - Thinking (High)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-opus-5-thinking-xhigh",
+				"name": "Claude Opus 5 - Thinking (XHigh)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "claude-opus-5-thinking-max",
+				"name": "Claude Opus 5 - Thinking (Max)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "gpt-5.6-sol",
+				"name": "GPT 5.6 Sol - Default",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "gpt-5.6-sol-thinking-high",
+				"name": "GPT 5.6 Sol - Thinking (High)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "gpt-5.6-sol-thinking-xhigh",
+				"name": "GPT 5.6 Sol - Thinking (Extra High)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "gpt-5.6-sol-thinking-max",
+				"name": "GPT 5.6 Sol - Thinking (Max)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "glm-5",
+				"name": "GLM-5 - Default",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": false,
+				"maxInputTokens": 200000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "glm-5-thinking-low",
+				"name": "GLM-5 - Thinking (Low)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": false,
+				"maxInputTokens": 200000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "glm-5-thinking-medium",
+				"name": "GLM-5 - Thinking (Medium)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": false,
+				"maxInputTokens": 200000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "glm-5-thinking-high",
+				"name": "GLM-5 - Thinking (High)",
+				"url": "http://127.0.0.1:8085/v1/messages",
+				"toolCalling": true,
+				"vision": false,
+				"maxInputTokens": 200000,
+				"maxOutputTokens": 128000
+			}
+		]
+	},
+	{
+		"name": "Bedrock",
+		"vendor": "customendpoint",
+		"apiType": "messages",
+		"models": [
+			{
+				"id": "xai.grok-4.3-thinking-none",
+				"name": "Grok 4.3 - Fast (no thinking)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "xai.grok-4.3-thinking-low",
+				"name": "Grok 4.3 - Thinking (Low)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "xai.grok-4.3-thinking-medium",
+				"name": "Grok 4.3 - Thinking (Medium)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "xai.grok-4.3-thinking-high",
+				"name": "Grok 4.3 - Thinking (High)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "zai.glm-5",
+				"name": "GLM-5 - Default",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": false,
+				"maxInputTokens": 256000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "zai.glm-5-thinking-high",
+				"name": "GLM-5 - Thinking (High)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": false,
+				"maxInputTokens": 256000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "moonshotai.kimi-k2.5",
+				"name": "Kimi K2.5 - Default",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": false,
+				"maxInputTokens": 256000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "moonshotai.kimi-k2.5-thinking-high",
+				"name": "Kimi K2.5 - Thinking (High)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": false,
+				"maxInputTokens": 256000,
+				"maxOutputTokens": 128000
+			}
+		]
+	}
+]
