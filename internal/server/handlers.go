@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"bedrock-simple/internal/anthropic"
@@ -64,11 +67,14 @@ func applyEffortToConverse(body *bedrock.ConverseRequest, modelID string) {
 	}
 }
 
-// sseWriter emits server-sent events and flushes each one immediately.
+// sseWriter emits server-sent events and flushes each one immediately. It is
+// mutex-guarded because the keepalive goroutine also writes to it.
 type sseWriter struct {
+	mu      sync.Mutex
 	w       http.ResponseWriter
 	flusher http.Flusher
 	wrote   bool
+	last    time.Time
 }
 
 func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
@@ -79,7 +85,21 @@ func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
 	return &sseWriter{w: w, flusher: flusher}, true
 }
 
+// written reports whether any bytes have reached the client, which makes a
+// failure non-retryable.
+func (s *sseWriter) written() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.wrote
+}
+
 func (s *sseWriter) begin() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.beginLocked()
+}
+
+func (s *sseWriter) beginLocked() {
 	s.w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	s.w.Header().Set("Cache-Control", "no-cache")
 	s.w.Header().Set("Connection", "keep-alive")
@@ -94,6 +114,9 @@ func (s *sseWriter) send(name string, data any) error {
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if name != "" {
 		if _, err := fmt.Fprintf(s.w, "event: %s\n", name); err != nil {
 			return err
@@ -102,15 +125,63 @@ func (s *sseWriter) send(name string, data any) error {
 	if _, err := fmt.Fprintf(s.w, "data: %s\n\n", raw); err != nil {
 		return err
 	}
-	s.wrote = true
-	s.flusher.Flush()
+	s.markWrittenLocked()
 	return nil
 }
 
 func (s *sseWriter) raw(line string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	fmt.Fprint(s.w, line)
+	s.markWrittenLocked()
+}
+
+func (s *sseWriter) markWrittenLocked() {
 	s.wrote = true
+	s.last = time.Now()
 	s.flusher.Flush()
+}
+
+// keepAlive sends an idle heartbeat until the returned stop is called.
+// Reasoning models can go minutes between the first event and the first token,
+// which otherwise looks like a dead connection to the client.
+func (s *sseWriter) keepAlive(ctx context.Context, every time.Duration, beat func()) func() {
+	done := make(chan struct{})
+	var once sync.Once
+
+	go func() {
+		t := time.NewTicker(every)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			case <-t.C:
+				s.mu.Lock()
+				idle := s.wrote && time.Since(s.last) >= every
+				s.mu.Unlock()
+				if idle {
+					beat()
+				}
+			}
+		}
+	}()
+	return func() { once.Do(func() { close(done) }) }
+}
+
+// keepAliveInterval is well inside the idle timeout of common proxies.
+const keepAliveInterval = 15 * time.Second
+
+// logStreamFailure reports a mid-stream failure. A cancelled context means the
+// client hung up, which is routine and not worth an error line.
+func logStreamFailure(r *http.Request, modelID string, err error) {
+	if errors.Is(err, context.Canceled) || errors.Is(r.Context().Err(), context.Canceled) {
+		logx.Debugf("%s model=%s client disconnected mid-stream", r.URL.Path, modelID)
+		return
+	}
+	logx.Errorf("%s model=%s stream aborted after partial output: %v", r.URL.Path, modelID, err)
 }
 
 // ------------------------------------------------------ OpenAI chat completions
@@ -161,11 +232,15 @@ func (h *Handler) streamChat(w http.ResponseWriter, r *http.Request, key *store.
 	}
 
 	conv := convert.NewOpenAIStream(newID("chatcmpl-"), req.Model, time.Now().Unix())
+	// OpenAI has no ping event, so an SSE comment is the portable heartbeat.
+	stopBeat := sse.keepAlive(r.Context(), keepAliveInterval, func() { sse.raw(": keepalive\n\n") })
+	defer stopBeat()
+
 	err := h.streamUpstream(r, modelID, body,
-		func() bool { return sse.wrote },
+		sse.written,
 		func(ev bedrock.StreamEvent) error {
 			for _, chunk := range conv.Handle(ev) {
-				if !sse.wrote {
+				if !sse.written() {
 					sse.begin()
 				}
 				if err := sse.send("", chunk); err != nil {
@@ -176,19 +251,20 @@ func (h *Handler) streamChat(w http.ResponseWriter, r *http.Request, key *store.
 		})
 
 	if err != nil {
-		if !sse.wrote {
+		if !sse.written() {
 			store.RecordUsage(keyID(key), 0, 0, true)
 			upstreamError(w, errStyleOpenAI, r, modelID, err)
 			return
 		}
-		logx.Errorf("%s model=%s stream aborted after partial output: %v", r.URL.Path, modelID, err)
+		logStreamFailure(r, modelID, err)
 		_ = sse.send("", openai.NewError("api_error", "upstream_error", err.Error()))
 		sse.raw("data: [DONE]\n\n")
 		store.RecordUsage(keyID(key), 0, 0, true)
 		return
 	}
 
-	if !sse.wrote {
+	stopBeat()
+	if !sse.written() {
 		sse.begin()
 	}
 	if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {
@@ -271,8 +347,14 @@ func (h *Handler) streamMessages(w http.ResponseWriter, r *http.Request, key *st
 	}
 
 	conv := convert.NewAnthropicStream(newID("msg_"), req.Model)
+	// Anthropic's own stream carries ping events, so clients already expect them.
+	stopBeat := sse.keepAlive(r.Context(), keepAliveInterval, func() {
+		_ = sse.send("ping", map[string]any{"type": "ping"})
+	})
+	defer stopBeat()
+
 	err := h.streamUpstream(r, modelID, body,
-		func() bool { return sse.wrote },
+		sse.written,
 		func(ev bedrock.StreamEvent) error {
 			var events []convert.SSE
 			if ev.Type == "messageStart" {
@@ -281,7 +363,7 @@ func (h *Handler) streamMessages(w http.ResponseWriter, r *http.Request, key *st
 				events = conv.Handle(ev)
 			}
 			for _, e := range events {
-				if !sse.wrote {
+				if !sse.written() {
 					sse.begin()
 				}
 				if err := sse.send(e.Event, e.Data); err != nil {
@@ -292,18 +374,19 @@ func (h *Handler) streamMessages(w http.ResponseWriter, r *http.Request, key *st
 		})
 
 	if err != nil {
-		if !sse.wrote {
+		if !sse.written() {
 			store.RecordUsage(keyID(key), 0, 0, true)
 			upstreamError(w, errStyleAnthropic, r, modelID, err)
 			return
 		}
-		logx.Errorf("%s model=%s stream aborted after partial output: %v", r.URL.Path, modelID, err)
+		logStreamFailure(r, modelID, err)
 		_ = sse.send("error", anthropic.NewErrorEnvelope("api_error", err.Error()))
 		store.RecordUsage(keyID(key), 0, 0, true)
 		return
 	}
 
-	if !sse.wrote {
+	stopBeat()
+	if !sse.written() {
 		sse.begin()
 		for _, e := range conv.Start(0) {
 			_ = sse.send(e.Event, e.Data)
