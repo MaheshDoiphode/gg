@@ -11,12 +11,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"bedrock-simple/internal/awsauth"
+	"bedrock-simple/internal/logx"
 	"bedrock-simple/internal/store"
 )
 
@@ -32,15 +34,56 @@ func New() *Client {
 	return &Client{
 		http: &http.Client{
 			Timeout: 30 * time.Minute,
-			Transport: &http.Transport{
-				MaxIdleConnsPerHost:   32,
-				IdleConnTimeout:       90 * time.Second,
+			Transport: &traceTransport{base: &http.Transport{
+				DialContext: (&net.Dialer{
+					Timeout: 30 * time.Second,
+					// A reasoning model can think for minutes without sending a
+					// byte. NAT gateways, VPC endpoints and corporate firewalls
+					// drop connections idle for 350s without telling the client,
+					// so probes have to keep the socket visibly alive.
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				MaxIdleConnsPerHost: 32,
+				// Kept well under the 350s idle limit so a pooled connection is
+				// never reused after the network has silently discarded it.
+				IdleConnTimeout:       60 * time.Second,
 				TLSHandshakeTimeout:   15 * time.Second,
 				ResponseHeaderTimeout: 5 * time.Minute,
 				ForceAttemptHTTP2:     true,
-			},
+			}},
 		},
 	}
+}
+
+// traceTransport records every upstream call. For a stream this measures the
+// time to response headers, which separates a slow connection from a slow model.
+type traceTransport struct{ base http.RoundTripper }
+
+func (t *traceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !logx.DebugEnabled() {
+		return t.base.RoundTrip(req)
+	}
+
+	start := time.Now()
+	resp, err := t.base.RoundTrip(req)
+	took := time.Since(start).Round(time.Millisecond)
+
+	if err != nil {
+		logx.Debugf("http %s %s%s failed after %s: %v",
+			req.Method, req.URL.Host, req.URL.Path, took, err)
+		return resp, err
+	}
+	logx.Debugf("http %s %s%s -> %d in %s (sent %d bytes, %s)",
+		req.Method, req.URL.Host, req.URL.Path, resp.StatusCode, took,
+		max64(req.ContentLength, 0), resp.Proto)
+	return resp, err
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // APIError is a non-2xx response from Bedrock.

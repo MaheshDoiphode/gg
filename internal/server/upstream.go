@@ -14,7 +14,8 @@ import (
 
 // Mantle exposes two APIs and nothing in its catalogue says which one a model
 // accepts: xai.grok-4.3 is rejected by /v1/chat/completions and only answers on
-// /openai/v1/responses. routeCache learns that from the first rejection.
+// /openai/v1/responses. routeCache learns that from the first rejection, and
+// persists it because learning costs a full prompt upload to the wrong endpoint.
 type routeCache struct {
 	mu     sync.RWMutex
 	byName map[string]string
@@ -25,7 +26,9 @@ const (
 	routeResponses = "responses"
 )
 
-func newRouteCache() *routeCache { return &routeCache{byName: map[string]string{}} }
+func newRouteCache() *routeCache {
+	return &routeCache{byName: store.ModelRoutes()}
+}
 
 func (r *routeCache) get(model string) string {
 	r.mu.RLock()
@@ -35,8 +38,16 @@ func (r *routeCache) get(model string) string {
 
 func (r *routeCache) set(model, route string) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	known := r.byName[model] == route
 	r.byName[model] = route
+	r.mu.Unlock()
+
+	if known {
+		return
+	}
+	if err := store.SetModelRoute(model, route); err != nil {
+		logx.Debugf("could not persist the %s route for %s: %v", route, model, err)
+	}
 }
 
 // wrongRoute reports a "model isn't supported on this route" rejection.
@@ -63,12 +74,15 @@ func applyConverseMaxTokens(body *bedrock.ConverseRequest) {
 
 // callUpstream runs one non-streaming inference against whichever Bedrock API
 // serves this model, returning the reply in the hub format.
-func (h *Handler) callUpstream(r *http.Request, modelID string, body *bedrock.ConverseRequest) (*bedrock.ConverseResponse, error) {
+func (h *Handler) callUpstream(r *http.Request, modelID string, body *bedrock.ConverseRequest, tr *trace) (*bedrock.ConverseResponse, error) {
 	var resp *bedrock.ConverseResponse
 	var chatErr error
+	attempt := 0
 
 	err := h.converse(r, modelID, body, func(cred store.Credential) error {
+		attempt++
 		if h.registry.UpstreamFor(modelID) != bedrock.UpstreamMantle {
+			tr.attempt("converse", cred.Region, attempt)
 			applyConverseMaxTokens(body)
 			out, callErr := h.client.Converse(r.Context(), cred, modelID, body)
 			if callErr != nil {
@@ -79,6 +93,7 @@ func (h *Handler) callUpstream(r *http.Request, modelID string, body *bedrock.Co
 		}
 
 		if h.routes.get(modelID) != routeResponses {
+			tr.attempt("mantle chat/completions", bedrock.MantleRegionOf(cred), attempt)
 			out, callErr := h.client.MantleChat(r.Context(), cred,
 				convert.ConverseToOpenAIRequest(modelID, body, false))
 			if callErr == nil {
@@ -89,16 +104,22 @@ func (h *Handler) callUpstream(r *http.Request, modelID string, body *bedrock.Co
 			if !wrongRoute(callErr) {
 				return callErr
 			}
+			logx.Debugf("%s chat/completions rejected %s, trying the responses API: %v", tr.id, modelID, callErr)
 			chatErr = callErr
 		}
 
 		// The Responses API can hang when not streamed, so always stream and fold.
+		tr.attempt("mantle responses", bedrock.MantleRegionOf(cred), attempt)
 		var events []bedrock.StreamEvent
 		adapter := convert.NewResponsesStream()
 		callErr := h.client.ResponsesStream(r.Context(), cred,
 			convert.ConverseToResponsesRequest(modelID, body),
 			func(ev bedrock.ResponsesEvent) error {
-				events = append(events, adapter.Handle(ev)...)
+				out := adapter.Handle(ev)
+				for _, e := range out {
+					tr.event(e)
+				}
+				events = append(events, out...)
 				return nil
 			})
 		if callErr != nil {
@@ -109,7 +130,7 @@ func (h *Handler) callUpstream(r *http.Request, modelID string, body *bedrock.Co
 		}
 		// Only trust the route once it has actually answered.
 		if h.routes.get(modelID) != routeResponses {
-			logx.Infof("model %s answers on the responses API, not chat/completions", modelID)
+			logx.Debugf("model %s answers on the responses API, not chat/completions", modelID)
 		}
 		h.routes.set(modelID, routeResponses)
 		events = append(events, adapter.Finish()...)
@@ -137,20 +158,25 @@ func bothRoutesFailed(model string, chatErr, respErr error) error {
 // emitted reports whether any bytes have already reached the client, which
 // makes a failure non-retryable.
 func (h *Handler) streamUpstream(r *http.Request, modelID string, body *bedrock.ConverseRequest,
-	emitted func() bool, fn bedrock.StreamFunc) error {
+	emitted func() bool, fn bedrock.StreamFunc, tr *trace) error {
 
+	attempt := 0
 	return h.converse(r, modelID, body, func(cred store.Credential) error {
 		var callErr error
+		attempt++
 
 		switch {
 		case h.registry.UpstreamFor(modelID) != bedrock.UpstreamMantle:
+			tr.attempt("converse stream", cred.Region, attempt)
 			applyConverseMaxTokens(body)
 			callErr = h.client.ConverseStream(r.Context(), cred, modelID, body, fn)
 
 		case h.routes.get(modelID) == routeResponses:
+			tr.attempt("mantle responses stream", bedrock.MantleRegionOf(cred), attempt)
 			callErr = h.streamResponses(r, cred, modelID, body, fn)
 
 		default:
+			tr.attempt("mantle chat/completions stream", bedrock.MantleRegionOf(cred), attempt)
 			adapter := convert.NewMantleStream()
 			callErr = h.client.MantleChatStream(r.Context(), cred,
 				convert.ConverseToOpenAIRequest(modelID, body, true),
@@ -165,11 +191,13 @@ func (h *Handler) streamUpstream(r *http.Request, modelID string, body *bedrock.
 			// A route rejection arrives before any output, so switching is safe.
 			if wrongRoute(callErr) && !emitted() {
 				chatErr := callErr
+				logx.Debugf("%s chat/completions rejected %s, trying the responses API: %v", tr.id, modelID, chatErr)
+				tr.attempt("mantle responses stream", bedrock.MantleRegionOf(cred), attempt)
 				callErr = h.streamResponses(r, cred, modelID, body, fn)
 				switch {
 				case callErr == nil:
 					if h.routes.get(modelID) != routeResponses {
-						logx.Infof("model %s answers on the responses API, not chat/completions", modelID)
+						logx.Debugf("model %s answers on the responses API, not chat/completions", modelID)
 					}
 					h.routes.set(modelID, routeResponses)
 				default:
@@ -220,6 +248,7 @@ func errEmptyUpstream(model string) error {
 	return &bedrock.APIError{
 		Status:    http.StatusBadGateway,
 		ErrorType: "empty_response",
-		Message:   "model " + model + " returned no content",
+		Message: "model " + model + " returned no content; reasoning models spend " +
+			"max_tokens on thinking before any text, so try a larger budget",
 	}
 }

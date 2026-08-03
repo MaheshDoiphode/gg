@@ -136,8 +136,9 @@ func (e *fatalError) Error() string { return e.err.Error() }
 func (e *fatalError) Unwrap() error { return e.err }
 
 // withCredential runs fn against usable credentials, retrying transient
-// failures on the next one.
-func (h *Handler) withCredential(fn func(cred store.Credential) error) error {
+// failures. A dropped connection is retried on the same credential; an upstream
+// failure moves on to the next one.
+func (h *Handler) withCredential(ctx context.Context, fn func(cred store.Credential) error) error {
 	excluded := map[string]bool{}
 	var lastErr error
 
@@ -161,6 +162,15 @@ func (h *Handler) withCredential(fn func(cred store.Credential) error) error {
 		if errors.As(err, &fatal) {
 			return err
 		}
+
+		if isTransientNetworkErr(err) {
+			logx.Warnf("connection to Bedrock dropped (%v), retrying", err)
+			if waitErr := sleepFor(ctx, retryBackoff(attempt)); waitErr != nil {
+				return err
+			}
+			continue
+		}
+
 		var apiErr *bedrock.APIError
 		if errors.As(err, &apiErr) && apiErr.Retryable() {
 			logx.Warnf("credential %q failed (%v), trying another", cred.Name, err)
@@ -178,7 +188,7 @@ func (h *Handler) withCredential(fn func(cred store.Credential) error) error {
 func (h *Handler) converse(r *http.Request, model string, body *bedrock.ConverseRequest, fn func(cred store.Credential) error) error {
 	var err error
 	for attempt := 0; attempt <= maxParamStripRetries; attempt++ {
-		err = h.withCredential(fn)
+		err = h.withCredential(r.Context(), fn)
 		if err == nil {
 			return nil
 		}

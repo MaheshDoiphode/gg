@@ -89,6 +89,9 @@ type Config struct {
 	APIKeys     []APIKey     `json:"apiKeys"`
 	// ModelMap overrides/extends the built-in alias -> Bedrock model id table.
 	ModelMap map[string]string `json:"modelMap"`
+	// ModelRoutes remembers which Mantle API answered for a model. Learning it
+	// costs a full prompt upload against the wrong endpoint, so it is persisted.
+	ModelRoutes map[string]string `json:"modelRoutes"`
 
 	TotalRequests int64 `json:"totalRequests"`
 	TotalFailures int64 `json:"totalFailures"`
@@ -119,6 +122,7 @@ func defaults() *Config {
 		Credentials:      []Credential{},
 		APIKeys:          []APIKey{},
 		ModelMap:         map[string]string{},
+		ModelRoutes:      map[string]string{},
 	}
 }
 
@@ -154,6 +158,9 @@ func Init(p string) error {
 	}
 	if c.ModelMap == nil {
 		c.ModelMap = map[string]string{}
+	}
+	if c.ModelRoutes == nil {
+		c.ModelRoutes = map[string]string{}
 	}
 	cfg = c
 	return saveLocked()
@@ -200,6 +207,10 @@ func Snapshot() Config {
 	c.ModelMap = make(map[string]string, len(cfg.ModelMap))
 	for k, v := range cfg.ModelMap {
 		c.ModelMap[k] = v
+	}
+	c.ModelRoutes = make(map[string]string, len(cfg.ModelRoutes))
+	for k, v := range cfg.ModelRoutes {
+		c.ModelRoutes[k] = v
 	}
 	return c
 }
@@ -283,6 +294,31 @@ func ModelMap() map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// ModelRoutes returns the remembered Mantle route per model.
+func ModelRoutes() map[string]string {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := make(map[string]string, len(cfg.ModelRoutes))
+	for k, v := range cfg.ModelRoutes {
+		out[k] = v
+	}
+	return out
+}
+
+// SetModelRoute remembers a route across restarts.
+func SetModelRoute(model, route string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	if cfg.ModelRoutes == nil {
+		cfg.ModelRoutes = map[string]string{}
+	}
+	if cfg.ModelRoutes[model] == route {
+		return nil
+	}
+	cfg.ModelRoutes[model] = route
+	return saveLocked()
 }
 
 func SetModelMapping(alias, target string) error {

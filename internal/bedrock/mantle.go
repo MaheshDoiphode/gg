@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"bedrock-simple/internal/awsauth"
+	"bedrock-simple/internal/logx"
 	"bedrock-simple/internal/openai"
 	"bedrock-simple/internal/store"
 )
@@ -38,6 +39,10 @@ func mantleRegion(cred store.Credential) string {
 	}
 	return region(cred)
 }
+
+// MantleRegionOf reports the region Mantle calls use, which may differ from the
+// credential's Converse region.
+func MantleRegionOf(cred store.Credential) string { return mantleRegion(cred) }
 
 func mantleHost(cred store.Credential) string {
 	return mantleRoot(cred) + "/v1"
@@ -169,6 +174,7 @@ func (c *Client) MantleChatStream(ctx context.Context, cred store.Credential, bo
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
+	chunks := 0
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		payload, ok := strings.CutPrefix(line, "data:")
@@ -178,19 +184,34 @@ func (c *Client) MantleChatStream(ctx context.Context, cred store.Credential, bo
 		payload = strings.TrimSpace(payload)
 		if payload == "" || payload == "[DONE]" {
 			if payload == "[DONE]" {
+				logx.Debugf("mantle chat: stream finished after %d chunk(s)", chunks)
 				return nil
 			}
 			continue
 		}
 		var chunk openai.ChatResponse
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			logx.Debugf("mantle chat: skipped an undecodable chunk: %v", err)
 			continue
 		}
+		chunks++
 		if err := fn(&chunk); err != nil {
 			return err
 		}
 	}
-	return scanner.Err()
+
+	if err := scanner.Err(); err != nil {
+		logx.Debugf("mantle chat: stream read failed after %d chunk(s): %v", chunks, err)
+		return err
+	}
+	// Reaching EOF without [DONE] means the answer was cut short, which the
+	// scanner reports as a clean end.
+	logx.Warnf("mantle chat: stream ended after %d chunk(s) without [DONE]", chunks)
+	return &APIError{
+		Status:    http.StatusBadGateway,
+		ErrorType: "incomplete_stream",
+		Message:   "the connection closed before the model finished responding",
+	}
 }
 
 // parseMantleError reads the OpenAI-shaped error body Mantle returns.

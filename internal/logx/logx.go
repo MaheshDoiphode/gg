@@ -35,6 +35,9 @@ func SetLevel(name string) {
 
 func enabled(l int32) bool { return atomic.LoadInt32(&level) <= l }
 
+// DebugEnabled lets callers skip building expensive trace strings.
+func DebugEnabled() bool { return enabled(levelDebug) }
+
 func emit(tag, format string, args ...any) {
 	out.Output(3, tag+" "+fmt.Sprintf(format, args...))
 }

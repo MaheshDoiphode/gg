@@ -207,6 +207,24 @@ func TestResolveWithEffortWithoutDiscovery(t *testing.T) {
 	}
 }
 
+// A Mantle-scoped key cannot call Converse at all, so an id missing from the
+// catalogue must still reach Mantle rather than fail as an invalid identifier.
+func TestUnknownModelFollowsPreferMantle(t *testing.T) {
+	if err := store.Init(filepath.Join(t.TempDir(), "config.json")); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRegistry()
+
+	if got := r.UpstreamFor("xai.grok-4.3"); got != UpstreamConverse {
+		t.Errorf("without preferMantle, unknown id -> %q, want %q", got, UpstreamConverse)
+	}
+
+	store.SetPreferMantle(true)
+	if got := r.UpstreamFor("xai.grok-4.3"); got != UpstreamMantle {
+		t.Errorf("with preferMantle, unknown id -> %q, want %q", got, UpstreamMantle)
+	}
+}
+
 func TestConfigMappingOverridesDiscovery(t *testing.T) {
 	if err := store.Init(filepath.Join(t.TempDir(), "config.json")); err != nil {
 		t.Fatal(err)

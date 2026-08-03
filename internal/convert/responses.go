@@ -30,6 +30,16 @@ func ConverseToResponsesRequest(model string, in *bedrock.ConverseRequest) *bedr
 			textType = "output_text"
 		}
 
+		// Text explaining a call has to stay ahead of it, so pending parts are
+		// flushed before each call rather than after the whole message.
+		flush := func() {
+			if len(parts) == 0 {
+				return
+			}
+			out.Input = append(out.Input, bedrock.ResponsesInput{Role: m.Role, Content: parts})
+			parts = nil
+		}
+
 		for _, b := range m.Content {
 			switch {
 			case b.Text != nil && *b.Text != "":
@@ -42,6 +52,7 @@ func ConverseToResponsesRequest(model string, in *bedrock.ConverseRequest) *bedr
 				})
 
 			case b.ToolUse != nil:
+				flush()
 				args := string(b.ToolUse.Input)
 				if args == "" {
 					args = "{}"
@@ -54,6 +65,7 @@ func ConverseToResponsesRequest(model string, in *bedrock.ConverseRequest) *bedr
 				})
 
 			case b.ToolResult != nil:
+				flush()
 				out.Input = append(out.Input, bedrock.ResponsesInput{
 					Type:   "function_call_output",
 					CallID: b.ToolResult.ToolUseID,
@@ -61,9 +73,7 @@ func ConverseToResponsesRequest(model string, in *bedrock.ConverseRequest) *bedr
 				})
 			}
 		}
-		if len(parts) > 0 {
-			out.Input = append(out.Input, bedrock.ResponsesInput{Role: m.Role, Content: parts})
-		}
+		flush()
 	}
 
 	if ic := in.InferenceConfig; ic != nil {

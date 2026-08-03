@@ -25,13 +25,18 @@ type Registry struct {
 	lastErr error
 }
 
-// UpstreamFor reports which API serves a resolved model id. Unknown ids default
-// to Converse, which is also what raw ids and ARNs need.
+// UpstreamFor reports which API serves a resolved model id. Unknown ids fall
+// back to Converse, which is what raw ids and ARNs need, unless the key is
+// Mantle-scoped: Converse then rejects everything, so a discovery gap would
+// turn a usable model into "model identifier is invalid".
 func (r *Registry) UpstreamFor(id string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if e, ok := r.byID[id]; ok {
 		return e.Upstream
+	}
+	if store.PreferMantle() {
+		return UpstreamMantle
 	}
 	return UpstreamConverse
 }

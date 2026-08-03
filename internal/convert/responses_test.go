@@ -221,3 +221,40 @@ func TestAggregateToConverse(t *testing.T) {
 		t.Errorf("tool = %#v", tool)
 	}
 }
+
+// Text that introduces a call must reach the model before the call itself,
+// otherwise the history reads as if the model spoke after acting.
+func TestResponsesKeepsTextBeforeToolCall(t *testing.T) {
+	req := &bedrock.ConverseRequest{Messages: []bedrock.Message{{
+		Role: "assistant",
+		Content: []bedrock.ContentBlock{
+			{Text: bedrock.Ptr("Let me look at the file first.")},
+			{ToolUse: &bedrock.ToolUseBlock{ToolUseID: "t1", Name: "Bash", Input: []byte(`{"command":"ls"}`)}},
+			{Text: bedrock.Ptr("Now editing.")},
+			{ToolUse: &bedrock.ToolUseBlock{ToolUseID: "t2", Name: "Edit", Input: []byte(`{"path":"a"}`)}},
+		},
+	}}}
+
+	got := ConverseToResponsesRequest("xai.grok-4.3", req)
+
+	var order []string
+	for _, in := range got.Input {
+		if in.Type == "function_call" {
+			order = append(order, "call:"+in.Name)
+			continue
+		}
+		for _, c := range in.Content {
+			order = append(order, "text:"+c.Text)
+		}
+	}
+
+	want := []string{
+		"text:Let me look at the file first.",
+		"call:Bash",
+		"text:Now editing.",
+		"call:Edit",
+	}
+	if strings.Join(order, "|") != strings.Join(want, "|") {
+		t.Errorf("input order\n got: %v\nwant: %v", order, want)
+	}
+}

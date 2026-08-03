@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"bedrock-simple/internal/logx"
 	"bedrock-simple/internal/store"
 )
 
@@ -81,10 +82,16 @@ type ResponsesItem struct {
 
 // ResponsesResult is the response envelope carried by lifecycle events.
 type ResponsesResult struct {
-	ID     string          `json:"id"`
-	Status string          `json:"status"`
-	Usage  *ResponsesUsage `json:"usage"`
-	Error  *ResponsesError `json:"error"`
+	ID                string               `json:"id"`
+	Status            string               `json:"status"`
+	Usage             *ResponsesUsage      `json:"usage"`
+	Error             *ResponsesError      `json:"error"`
+	IncompleteDetails *ResponsesIncomplete `json:"incomplete_details"`
+}
+
+// ResponsesIncomplete says why the model stopped before finishing.
+type ResponsesIncomplete struct {
+	Reason string `json:"reason"`
 }
 
 // ResponsesError is the failure carried by a response.failed event.
@@ -130,6 +137,7 @@ func (c *Client) ResponsesStream(ctx context.Context, cred store.Credential, bod
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
+	frames, terminal := 0, ""
 	for scanner.Scan() {
 		payload, ok := strings.CutPrefix(strings.TrimSpace(scanner.Text()), "data:")
 		if !ok {
@@ -141,18 +149,52 @@ func (c *Client) ResponsesStream(ctx context.Context, cred store.Credential, bod
 		}
 		var ev ResponsesEvent
 		if err := json.Unmarshal([]byte(payload), &ev); err != nil {
+			logx.Debugf("responses: skipped an undecodable frame: %v", err)
 			continue
 		}
+		frames++
 		// A failure arrives as an ordinary SSE frame, not an HTTP error, so it
 		// must be raised here or it silently becomes an empty answer.
 		if ev.Type == "response.failed" {
+			logx.Debugf("responses: upstream reported failure after %d frame(s)", frames)
 			return responseFailure(ev)
+		}
+		if ev.Type == "response.completed" || ev.Type == "response.incomplete" {
+			terminal = ev.Type
+			if ev.Type == "response.incomplete" {
+				logx.Warnf("responses: model stopped early (%s)", incompleteReason(ev))
+			}
 		}
 		if err := fn(ev); err != nil {
 			return err
 		}
 	}
-	return scanner.Err()
+
+	if err := scanner.Err(); err != nil {
+		logx.Debugf("responses: stream read failed after %d frame(s): %v", frames, err)
+		return err
+	}
+	// EOF is not an error to the scanner, so a connection cut mid-answer would
+	// otherwise be indistinguishable from a finished one.
+	if terminal == "" {
+		logx.Warnf("responses: stream ended after %d frame(s) without a completion event", frames)
+		return &APIError{
+			Status:    http.StatusBadGateway,
+			ErrorType: "incomplete_stream",
+			Message:   "the connection closed before the model finished responding",
+		}
+	}
+	logx.Debugf("responses: stream finished with %s after %d frame(s)", terminal, frames)
+	return nil
+}
+
+// incompleteReason explains a response.incomplete event, which is usually the
+// output budget running out.
+func incompleteReason(ev ResponsesEvent) string {
+	if ev.Response != nil && ev.Response.IncompleteDetails != nil && ev.Response.IncompleteDetails.Reason != "" {
+		return ev.Response.IncompleteDetails.Reason
+	}
+	return "reason not given"
 }
 
 func responseFailure(ev ResponsesEvent) error {
