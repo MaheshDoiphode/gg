@@ -112,13 +112,15 @@ var (
 
 func defaults() *Config {
 	return &Config{
-		Host:             "127.0.0.1",
-		Port:             8080,
-		AdminPassword:    "admin",
-		RequireAPIKey:    true,
-		LogLevel:         "info",
-		DefaultRegion:    "us-east-1",
-		MaxTokensDefault: 4096,
+		Host:          "127.0.0.1",
+		Port:          8080,
+		AdminPassword: "admin",
+		RequireAPIKey: true,
+		LogLevel:      "info",
+		DefaultRegion: "us-east-1",
+		// Only applied to Converse-routed models that send no max_tokens at all;
+		// 4096 was low enough to silently cripple a real answer.
+		MaxTokensDefault: 128000,
 		Credentials:      []Credential{},
 		APIKeys:          []APIKey{},
 		ModelMap:         map[string]string{},
@@ -151,7 +153,7 @@ func Init(p string) error {
 		c.Port = 8080
 	}
 	if c.MaxTokensDefault == 0 {
-		c.MaxTokensDefault = 4096
+		c.MaxTokensDefault = 128000
 	}
 	if c.DefaultRegion == "" {
 		c.DefaultRegion = "us-east-1"

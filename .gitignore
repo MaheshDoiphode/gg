@@ -2,3 +2,4 @@ data/
 .env
 *.exe
 bedrock-simple
+*.exe
