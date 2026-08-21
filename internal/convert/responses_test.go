@@ -258,3 +258,64 @@ func TestResponsesKeepsTextBeforeToolCall(t *testing.T) {
 		t.Errorf("input order\n got: %v\nwant: %v", order, want)
 	}
 }
+
+// Anthropic requires content block indices to start at 0. A tool-only reply
+// used to start at 1, which clients reject as a response with no content.
+func TestResponsesToolOnlyReplyStartsAtBlockZero(t *testing.T) {
+	s := NewResponsesStream()
+	s.Handle(bedrock.ResponsesEvent{Type: "response.created"})
+
+	events := s.Handle(bedrock.ResponsesEvent{
+		Type: "response.output_item.added",
+		Item: &bedrock.ResponsesItem{Type: "function_call", ID: "i1", CallID: "c1", Name: "read_file"},
+	})
+
+	var starts []int
+	for _, ev := range events {
+		if ev.Type == "contentBlockStart" {
+			starts = append(starts, ev.ContentBlockIndex)
+		}
+	}
+	if len(starts) != 1 || starts[0] != 0 {
+		t.Fatalf("tool-only reply opened blocks %v, want [0]", starts)
+	}
+}
+
+// Text and reasoning are different Anthropic block kinds, so sharing an index
+// would make the thinking block swallow the answer text.
+func TestResponsesTextAndReasoningUseDistinctBlocks(t *testing.T) {
+	s := NewResponsesStream()
+	s.Handle(bedrock.ResponsesEvent{Type: "response.created"})
+
+	reason := s.Handle(bedrock.ResponsesEvent{Type: "response.reasoning_text.delta", Delta: "thinking"})
+	text := s.Handle(bedrock.ResponsesEvent{Type: "response.output_text.delta", Delta: "answer"})
+
+	if len(reason) != 1 || len(text) != 1 {
+		t.Fatalf("expected one event each, got %d and %d", len(reason), len(text))
+	}
+	if reason[0].ContentBlockIndex == text[0].ContentBlockIndex {
+		t.Errorf("reasoning and text share block %d", text[0].ContentBlockIndex)
+	}
+	if reason[0].ContentBlockIndex != 0 {
+		t.Errorf("first block index = %d, want 0", reason[0].ContentBlockIndex)
+	}
+}
+
+// Text arriving before a tool call must keep block 0 and push the tool to 1.
+func TestResponsesTextThenToolAreContiguous(t *testing.T) {
+	s := NewResponsesStream()
+	s.Handle(bedrock.ResponsesEvent{Type: "response.created"})
+
+	text := s.Handle(bedrock.ResponsesEvent{Type: "response.output_text.delta", Delta: "hi"})
+	tool := s.Handle(bedrock.ResponsesEvent{
+		Type: "response.output_item.added",
+		Item: &bedrock.ResponsesItem{Type: "function_call", ID: "i1", CallID: "c1", Name: "Bash"},
+	})
+
+	if text[0].ContentBlockIndex != 0 {
+		t.Errorf("text block = %d, want 0", text[0].ContentBlockIndex)
+	}
+	if tool[0].ContentBlockIndex != 1 {
+		t.Errorf("tool block = %d, want 1", tool[0].ContentBlockIndex)
+	}
+}

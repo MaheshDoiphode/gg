@@ -274,6 +274,42 @@
 				"maxOutputTokens": 128000
 			},
 			{
+				"id": "xai.grok-4.6-thinking-none",
+				"name": "Grok 4.6 - Fast (no thinking)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 500000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "xai.grok-4.6-thinking-low",
+				"name": "Grok 4.6 - Thinking (Low)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 500000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "xai.grok-4.6-thinking-medium",
+				"name": "Grok 4.6 - Thinking (Medium)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 500000,
+				"maxOutputTokens": 128000
+			},
+			{
+				"id": "xai.grok-4.6-thinking-high",
+				"name": "Grok 4.6 - Thinking (High)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 500000,
+				"maxOutputTokens": 128000
+			},
+			{
 				"id": "zai.glm-5",
 				"name": "GLM-5 - Default",
 				"url": "http://127.0.0.1:8089/v1/messages",

@@ -113,17 +113,28 @@ func ConverseToResponsesRequest(model string, in *bedrock.ConverseRequest) *bedr
 // ResponsesStream converts Responses API events into hub events, so the OpenAI
 // and Anthropic renderers work over this upstream unchanged.
 type ResponsesStream struct {
-	started    bool
-	textOpen   bool
-	sawContent bool
-	toolBlock  map[string]int // function_call item id -> hub content block index
-	nextBlock  int
-	stopped    bool
+	started     bool
+	textBlock   int // -1 until the model emits text
+	reasonBlock int // -1 until the model emits reasoning
+	sawContent  bool
+	toolBlock   map[string]int // function_call item id -> hub content block index
+	nextBlock   int
+	stopped     bool
 }
 
 // NewResponsesStream creates the upstream stream adapter.
 func NewResponsesStream() *ResponsesStream {
-	return &ResponsesStream{toolBlock: map[string]int{}}
+	return &ResponsesStream{toolBlock: map[string]int{}, textBlock: -1, reasonBlock: -1}
+}
+
+// block assigns an index on first use. Anthropic requires content block indices
+// to start at 0, so reserving 0 for text would strand a tool-only reply at 1.
+func (s *ResponsesStream) block(slot *int) int {
+	if *slot < 0 {
+		*slot = s.nextBlock
+		s.nextBlock++
+	}
+	return *slot
 }
 
 // Handle converts one Responses event into zero or more hub events.
@@ -140,10 +151,9 @@ func (s *ResponsesStream) Handle(ev bedrock.ResponsesEvent) []bedrock.StreamEven
 		if ev.Delta == "" {
 			break
 		}
-		s.textOpen = true
 		s.sawContent = true
 		out = append(out, bedrock.StreamEvent{
-			Type: "contentBlockDelta", ContentBlockIndex: 0,
+			Type: "contentBlockDelta", ContentBlockIndex: s.block(&s.textBlock),
 			Delta: &bedrock.ContentBlockDelta{Text: ev.Delta},
 		})
 
@@ -152,7 +162,7 @@ func (s *ResponsesStream) Handle(ev bedrock.ResponsesEvent) []bedrock.StreamEven
 			break
 		}
 		out = append(out, bedrock.StreamEvent{
-			Type: "contentBlockDelta", ContentBlockIndex: 0,
+			Type: "contentBlockDelta", ContentBlockIndex: s.block(&s.reasonBlock),
 			Delta: &bedrock.ContentBlockDelta{
 				ReasoningContent: &bedrock.ReasoningDelta{Text: ev.Delta},
 			},
@@ -162,8 +172,8 @@ func (s *ResponsesStream) Handle(ev bedrock.ResponsesEvent) []bedrock.StreamEven
 		if ev.Item == nil || ev.Item.Type != "function_call" {
 			break
 		}
-		s.nextBlock++
 		block := s.nextBlock
+		s.nextBlock++
 		s.toolBlock[ev.Item.ID] = block
 		s.sawContent = true
 		out = append(out, bedrock.StreamEvent{
@@ -191,9 +201,10 @@ func (s *ResponsesStream) Handle(ev bedrock.ResponsesEvent) []bedrock.StreamEven
 }
 
 // Produced reports whether the model emitted any content. An empty answer
-// breaks agent loops silently, so callers treat it as a failure.
+// breaks agent loops silently, so callers treat it as a failure. Reasoning
+// alone does not count, since it carries no answer for the caller.
 func (s *ResponsesStream) Produced() bool {
-	return s.textOpen || s.sawContent || len(s.toolBlock) > 0
+	return s.sawContent || len(s.toolBlock) > 0
 }
 
 func (s *ResponsesStream) finish(ev bedrock.ResponsesEvent) []bedrock.StreamEvent {
@@ -203,9 +214,13 @@ func (s *ResponsesStream) finish(ev bedrock.ResponsesEvent) []bedrock.StreamEven
 	s.stopped = true
 
 	var out []bedrock.StreamEvent
-	if s.textOpen {
-		out = append(out, bedrock.StreamEvent{Type: "contentBlockStop", ContentBlockIndex: 0})
-		s.textOpen = false
+	if s.reasonBlock >= 0 {
+		out = append(out, bedrock.StreamEvent{Type: "contentBlockStop", ContentBlockIndex: s.reasonBlock})
+		s.reasonBlock = -1
+	}
+	if s.textBlock >= 0 {
+		out = append(out, bedrock.StreamEvent{Type: "contentBlockStop", ContentBlockIndex: s.textBlock})
+		s.textBlock = -1
 	}
 	hadTool := len(s.toolBlock) > 0
 	for _, block := range s.toolBlock {
