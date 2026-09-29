@@ -37,7 +37,7 @@ func TestNormalizeEffort(t *testing.T) {
 		"none": EffortNone, "minimal": EffortNone, "disabled": EffortNone,
 		"low": EffortLow, "LOW": EffortLow,
 		"medium": EffortMedium, "auto": EffortMedium,
-		"high": EffortHigh, "max": EffortHigh, "xhigh": EffortHigh,
+		"high": EffortHigh, "max": EffortXHigh, "xhigh": EffortXHigh,
 		"nonsense": "", "": "",
 	}
 	for in, want := range cases {
@@ -57,10 +57,13 @@ func TestEffortBudgetRoundTrip(t *testing.T) {
 	if got := EffortForBudget(4096); got != EffortMedium {
 		t.Errorf("budget 4096 -> %q", got)
 	}
-	if got := EffortForBudget(32000); got != EffortHigh {
-		t.Errorf("budget 32000 -> %q", got)
+	if got := EffortForBudget(16384); got != EffortHigh {
+		t.Errorf("budget 16384 -> %q", got)
 	}
-	for _, level := range []string{EffortLow, EffortMedium, EffortHigh} {
+	if got := EffortForBudget(32768); got != EffortXHigh {
+		t.Errorf("budget 32768 -> %q", got)
+	}
+	for _, level := range []string{EffortLow, EffortMedium, EffortHigh, EffortXHigh} {
 		if EffortForBudget(BudgetForEffort(level)) != level {
 			t.Errorf("%q did not survive the budget round trip", level)
 		}

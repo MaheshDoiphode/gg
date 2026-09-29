@@ -310,6 +310,15 @@
 				"maxOutputTokens": 128000
 			},
 			{
+				"id": "xai.grok-4.6-thinking-xhigh",
+				"name": "Grok 4.6 - Thinking (Extra High)",
+				"url": "http://127.0.0.1:8089/v1/messages",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 500000,
+				"maxOutputTokens": 128000
+			},
+			{
 				"id": "zai.glm-5",
 				"name": "GLM-5 - Default",
 				"url": "http://127.0.0.1:8089/v1/messages",

@@ -77,7 +77,7 @@ func (c *Client) newMantleRequest(ctx context.Context, cred store.Credential, me
 			AccessKey:    cred.AccessKey,
 			SecretKey:    cred.SecretKey,
 			SessionToken: cred.SessionToken,
-		}, region(cred), "bedrock-mantle", time.Now())
+		}, mantleRegion(cred), "bedrock-mantle", time.Now())
 	}
 	return req, nil
 }

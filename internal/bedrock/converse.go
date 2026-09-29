@@ -24,6 +24,7 @@ const (
 	EffortLow    = "low"
 	EffortMedium = "medium"
 	EffortHigh   = "high"
+	EffortXHigh  = "xhigh"
 )
 
 // Message is one conversation turn.

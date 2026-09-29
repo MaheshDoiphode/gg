@@ -15,8 +15,8 @@ var effortSuffixes = []struct{ suffix, level string }{
 	{EffortLow, EffortLow},
 	{EffortMedium, EffortMedium},
 	{EffortHigh, EffortHigh},
-	{"max", EffortHigh},
-	{"xhigh", EffortHigh},
+	{EffortXHigh, EffortXHigh},
+	{"max", EffortXHigh},
 	{"minimal", EffortNone},
 }
 
@@ -63,8 +63,10 @@ func NormalizeEffort(v string) string {
 		return EffortLow
 	case "medium", "auto", "default":
 		return EffortMedium
-	case "high", "max", "xhigh":
+	case "high":
 		return EffortHigh
+	case "max", "xhigh":
+		return EffortXHigh
 	default:
 		return ""
 	}
@@ -79,8 +81,10 @@ func EffortForBudget(budgetTokens int) string {
 		return EffortLow
 	case budgetTokens < 8192:
 		return EffortMedium
-	default:
+	case budgetTokens < 32768:
 		return EffortHigh
+	default:
+		return EffortXHigh
 	}
 }
 
@@ -94,6 +98,8 @@ func BudgetForEffort(effort string) int {
 		return 4096
 	case EffortHigh:
 		return 16384
+	case EffortXHigh:
+		return 32768
 	default:
 		return 0
 	}
