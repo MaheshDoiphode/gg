@@ -35,6 +35,7 @@ func New() *Client {
 		http: &http.Client{
 			Timeout: 30 * time.Minute,
 			Transport: &traceTransport{base: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
 				DialContext: (&net.Dialer{
 					Timeout: 30 * time.Second,
 					// A reasoning model can think for minutes without sending a

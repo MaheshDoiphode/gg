@@ -32,11 +32,11 @@ type Registry struct {
 func (r *Registry) UpstreamFor(id string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if e, ok := r.byID[id]; ok {
-		return e.Upstream
-	}
 	if store.PreferMantle() {
 		return UpstreamMantle
+	}
+	if e, ok := r.byID[id]; ok {
+		return e.Upstream
 	}
 	return UpstreamConverse
 }
