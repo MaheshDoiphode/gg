@@ -338,10 +338,12 @@ func (h *Handler) streamChat(w http.ResponseWriter, r *http.Request, key *store.
 	if !sse.written() {
 		sse.begin()
 	}
-	if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {
-		if chunk := conv.UsageChunk(); chunk != nil {
-			_ = sse.send("", chunk)
-		}
+	// Always emit the final usage chunk when Bedrock gave us one. OpenAI only
+	// requires this when stream_options.include_usage is set, but Copilot and
+	// most editor custom-endpoints stream without that flag and otherwise
+	// report 0 tokens.
+	if chunk := conv.UsageChunk(); chunk != nil {
+		_ = sse.send("", chunk)
 	}
 	sse.raw("data: [DONE]\n\n")
 
@@ -426,12 +428,15 @@ func (h *Handler) streamMessages(w http.ResponseWriter, r *http.Request, key *st
 	conv := convert.NewAnthropicStream(newID("msg_"), req.Model)
 
 	// message_start must precede any other event, including the heartbeat, and
-	// must be sent exactly once no matter who gets there first.
+	// must be sent exactly once no matter who gets there first. Input tokens
+	// are not known until the final metadata event, so start with an estimate
+	// and overwrite from Bedrock in message_delta.
+	estIn := convert.EstimateRequestTokens(body)
 	var startOnce sync.Once
 	emitStart := func() {
 		startOnce.Do(func() {
 			sse.begin()
-			for _, e := range conv.Start(0) {
+			for _, e := range conv.Start(estIn) {
 				_ = sse.send(e.Event, e.Data)
 			}
 		})

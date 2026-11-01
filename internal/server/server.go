@@ -276,10 +276,15 @@ func upstreamError(w http.ResponseWriter, style errStyle, r *http.Request, model
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	count, updated, lastErr := h.registry.Status()
+	snap := store.Snapshot()
 	body := map[string]any{
-		"status":      "ok",
-		"models":      count,
-		"credentials": len(store.Credentials()),
+		"status":             "ok",
+		"models":             count,
+		"credentials":        len(store.Credentials()),
+		"totalRequests":      snap.TotalRequests,
+		"totalFailures":      snap.TotalFailures,
+		"totalInputTokens":   snap.TotalInTokens,
+		"totalOutputTokens":  snap.TotalOutToken,
 	}
 	if !updated.IsZero() {
 		body["modelsUpdatedAt"] = updated.UTC().Format(time.RFC3339)

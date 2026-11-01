@@ -413,10 +413,20 @@ func (s *AnthropicStream) Finish() []SSE {
 	if reason == "" {
 		reason = "end_turn"
 	}
+	usage := map[string]any{
+		"input_tokens":  s.Usage.InputTokens,
+		"output_tokens": s.Usage.OutputTokens,
+	}
+	if s.Usage.CacheReadInputTokens > 0 {
+		usage["cache_read_input_tokens"] = s.Usage.CacheReadInputTokens
+	}
+	if s.Usage.CacheWriteInputTokens > 0 {
+		usage["cache_creation_input_tokens"] = s.Usage.CacheWriteInputTokens
+	}
 	out = append(out, SSE{Event: "message_delta", Data: map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": reason, "stop_sequence": nil},
-		"usage": map[string]any{"output_tokens": s.Usage.OutputTokens},
+		"usage": usage,
 	}})
 	out = append(out, SSE{Event: "message_stop", Data: map[string]any{"type": "message_stop"}})
 	return out

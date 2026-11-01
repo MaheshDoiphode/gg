@@ -131,6 +131,14 @@ func TestAnthropicStreamOpensTextBlockLazily(t *testing.T) {
 	if s.Usage.OutputTokens != 2 {
 		t.Errorf("usage = %#v", s.Usage)
 	}
+	last := events[len(events)-2]
+	if last.Event != "message_delta" {
+		t.Fatalf("expected message_delta, got %s", last.Event)
+	}
+	usage := last.Data.(map[string]any)["usage"].(map[string]any)
+	if usage["input_tokens"] != 11 || usage["output_tokens"] != 2 {
+		t.Errorf("message_delta usage = %#v", usage)
+	}
 }
 
 func TestAnthropicStreamToolUseBlock(t *testing.T) {

@@ -250,6 +250,37 @@ func TestChatCompletionsStreaming(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsStreamingEmitsUsageWithoutFlag(t *testing.T) {
+	h, _ := setup(t)
+
+	rec := post(t, h, "/v1/chat/completions",
+		`{"model":"m","stream":true,"messages":[{"role":"user","content":"hi"}]}`, true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var sawUsage bool
+	for _, line := range strings.Split(rec.Body.String(), "\n") {
+		payload, ok := strings.CutPrefix(line, "data: ")
+		if !ok || payload == "[DONE]" {
+			continue
+		}
+		var chunk map[string]any
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			t.Fatalf("bad chunk %q: %v", payload, err)
+		}
+		if u, ok := chunk["usage"].(map[string]any); ok {
+			sawUsage = true
+			if u["prompt_tokens"].(float64) != 9 || u["completion_tokens"].(float64) != 2 {
+				t.Errorf("usage = %v", u)
+			}
+		}
+	}
+	if !sawUsage {
+		t.Error("streamed reply omitted usage; Copilot needs this without include_usage")
+	}
+}
+
 func TestAnthropicMessages(t *testing.T) {
 	h, _ := setup(t)
 
@@ -294,6 +325,32 @@ func TestAnthropicMessagesStreaming(t *testing.T) {
 	want := "message_start,content_block_start,content_block_delta,content_block_delta,content_block_stop,message_delta,message_stop"
 	if got := strings.Join(order, ","); got != want {
 		t.Fatalf("event order\n got: %s\nwant: %s", got, want)
+	}
+
+	var sawIn, sawOut bool
+	for _, line := range strings.Split(body, "\n") {
+		payload, ok := strings.CutPrefix(line, "data: ")
+		if !ok {
+			continue
+		}
+		var ev map[string]any
+		if err := json.Unmarshal([]byte(payload), &ev); err != nil {
+			continue
+		}
+		if ev["type"] != "message_delta" {
+			continue
+		}
+		u, _ := ev["usage"].(map[string]any)
+		if u["input_tokens"].(float64) != 9 {
+			t.Errorf("message_delta input_tokens = %v", u["input_tokens"])
+		}
+		if u["output_tokens"].(float64) != 2 {
+			t.Errorf("message_delta output_tokens = %v", u["output_tokens"])
+		}
+		sawIn, sawOut = true, true
+	}
+	if !sawIn || !sawOut {
+		t.Error("message_delta missing usage")
 	}
 }
 
@@ -458,5 +515,17 @@ func TestUsageIsRecordedAgainstTheKey(t *testing.T) {
 	}
 	if keys[0].Requests != 1 || keys[0].InputTokens != 9 || keys[0].OutTokens != 2 {
 		t.Errorf("usage not recorded: %+v", keys[0])
+	}
+
+	post(t, h, "/v1/chat/completions",
+		`{"model":"m","stream":true,"messages":[{"role":"user","content":"hi"}]}`, true)
+	keys = store.APIKeys()
+	if keys[0].Requests != 2 || keys[0].InputTokens != 18 || keys[0].OutTokens != 4 {
+		t.Errorf("stream usage not recorded: %+v", keys[0])
+	}
+
+	snap := store.Snapshot()
+	if snap.TotalRequests != 2 || snap.TotalInTokens != 18 || snap.TotalOutToken != 4 {
+		t.Errorf("global counters = req=%d in=%d out=%d", snap.TotalRequests, snap.TotalInTokens, snap.TotalOutToken)
 	}
 }

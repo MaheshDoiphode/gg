@@ -487,7 +487,9 @@ func OverLimit(k APIKey) bool {
 	return k.TokenLimit > 0 && k.InputTokens+k.OutTokens >= k.TokenLimit
 }
 
-// RecordUsage attributes tokens to a key and to the global counters.
+// RecordUsage attributes tokens to a key and to the global counters, then
+// writes them to disk. Without the flush, totals only appear after a clean
+// shutdown — looking at config.json while the proxy is running always showed 0.
 func RecordUsage(keyID string, in, out int64, failed bool) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -506,6 +508,7 @@ func RecordUsage(keyID string, in, out int64, failed bool) {
 			break
 		}
 	}
+	_ = saveLocked()
 }
 
 func randHex(n int) string {
