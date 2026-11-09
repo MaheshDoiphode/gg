@@ -223,6 +223,13 @@ func TestUnknownModelFollowsPreferMantle(t *testing.T) {
 	if got := r.UpstreamFor("xai.grok-4.3"); got != UpstreamMantle {
 		t.Errorf("with preferMantle, unknown id -> %q, want %q", got, UpstreamMantle)
 	}
+	// Cross-region inference profiles are Converse-only even with preferMantle.
+	if got := r.UpstreamFor("global.moonshotai.kimi-k3.1"); got != UpstreamConverse {
+		t.Errorf("with preferMantle, global profile -> %q, want %q", got, UpstreamConverse)
+	}
+	if got := r.UpstreamFor("us.moonshotai.kimi-k3.1"); got != UpstreamConverse {
+		t.Errorf("with preferMantle, us profile -> %q, want %q", got, UpstreamConverse)
+	}
 }
 
 func TestConfigMappingOverridesDiscovery(t *testing.T) {

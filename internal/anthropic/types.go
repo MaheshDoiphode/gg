@@ -23,12 +23,26 @@ type Request struct {
 	Tools            []Tool          `json:"tools,omitempty"`
 	ToolChoice       json.RawMessage `json:"tool_choice,omitempty"`
 	Thinking         *Thinking       `json:"thinking,omitempty"`
+	OutputConfig     *OutputConfig   `json:"output_config,omitempty"`
+	ReasoningEffort  string          `json:"reasoning_effort,omitempty"`
+	Reasoning        *Reasoning      `json:"reasoning,omitempty"`
 }
 
 // Thinking enables extended reasoning.
 type Thinking struct {
-	Type         string `json:"type"` // "enabled" | "disabled"
+	Type         string `json:"type"` // "enabled" | "adaptive" | "disabled"
 	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
+// OutputConfig carries Anthropic Messages effort (used by VS Code Copilot
+// when reasoningEffortFormat is "messages").
+type OutputConfig struct {
+	Effort string `json:"effort,omitempty"`
+}
+
+// Reasoning carries Responses-style effort when sent to /v1/messages.
+type Reasoning struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 // SystemBlock is one entry of the system prompt array.

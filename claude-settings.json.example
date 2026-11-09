@@ -2,251 +2,61 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "env": {
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:8089",
-    "ANTHROPIC_AUTH_TOKEN": "proxy-local-token",
-    "ANTHROPIC_MODEL": "xai.grok-4.6-thinking-high",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "xai.grok-4.6-thinking-high",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "xai.grok-4.6-thinking-high",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "xai.grok-4.6-thinking-none",
-    "ANTHROPIC_SMALL_FAST_MODEL": "xai.grok-4.6-thinking-none",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "xai.grok-4.6-thinking-high",
+    "ANTHROPIC_AUTH_TOKEN": "dummy",
+    "ANTHROPIC_MODEL": "moonshotai.kimi-k3.1[1m]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "moonshotai.kimi-k3.1[1m]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "moonshotai.kimi-k3.1[1m]",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "moonshotai.kimi-k3.1",
+    "ANTHROPIC_SMALL_FAST_MODEL": "moonshotai.kimi-k3.1",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "moonshotai.kimi-k3.1",
+    "CLAUDE_CODE_USE_VERTEX": "0",
+    "CLAUDE_CODE_USE_BEDROCK": "0",
+    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
+    "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false",
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "true",
+    "CLAUDE_CODE_ENABLE_AWAY_SUMMARY": "0",
+    "CLAUDE_CODE_TOTAL_TOKENS_REMINDER": "off",
+    "MCP_CONNECT_TIMEOUT_MS": "20000",
     "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "450000",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "700000",
     "DISABLE_INTERLEAVED_THINKING": "0",
     "CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "1",
-    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "128000",
-    "CLAUDE_CODE_EFFORT_LEVEL": "max",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "65536",
+    "CLAUDE_CODE_EFFORT_LEVEL": "medium",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "88",
-    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "500000",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "1048576",
     "MAX_MCP_OUTPUT_TOKENS": "50000",
     "MCP_TIMEOUT": "200000",
     "ENABLE_TOOL_SEARCH": "auto",
     "DISABLE_TELEMETRY": "1",
     "DISABLE_ERROR_REPORTING": "1",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "API_TIMEOUT_MS": "6000000",
     "CLAUDE_ENABLE_STREAM_WATCHDOG": "0",
-    "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
+    "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",
+    "ENABLE_PROMPT_CACHING_1H": "1"
   },
   "permissions": {
     "defaultMode": "auto"
   },
-  "model": "haiku",
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "TeammateIdle": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "C:\\WINDOWS\\System32\\conhost.exe",
-            "args": [
-              "--headless",
-              "C:\\WINDOWS\\System32\\cmd.exe",
-              "/d",
-              "/c",
-              "%USERPROFILE%\\.orca\\agent-hooks\\claude-hook.cmd"
-            ],
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "if [ -z \"${HOME-}\" ]; then { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; else case \"${OSTYPE-}\" in msys*|cygwin*|win32*) if [ -f \"$HOME/.orca/agent-hooks/claude-statusline.cmd\" ]; then case \"$HOME\" in *\\&*|*\\^*|*\\(*|*\\)*|*\\;*|*,*|*=*|*%*|*\\!*) if [ -f \"$SYSTEMROOT/System32/WindowsPowerShell/v1.0/powershell.exe\" ]; then \"$SYSTEMROOT/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABoAG8AbQBlAFAAYQB0AGgAIAA9ACAAJABlAG4AdgA6AEgATwBNAEUAIAAtAHIAZQBwAGwAYQBjAGUAIAAnAF4ALwAoAFsAQQAtAFoAYQAtAHoAXQApAC8AJwAsACAAJwAkADEAOgAvACcAOwAgACQAcwBjAHIAaQBwAHQAUABhAHQAaAAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAaABvAG0AZQBQAGEAdABoACAAJwAuAG8AcgBjAGEAXABhAGcAZQBuAHQALQBoAG8AbwBrAHMAXABjAGwAYQB1AGQAZQAtAHMAdABhAHQAdQBzAGwAaQBuAGUALgBjAG0AZAAnADsAIABpAGYAIAAoAFQAZQBzAHQALQBQAGEAdABoACAALQBMAGkAdABlAHIAYQBsAFAAYQB0AGgAIAAkAHMAYwByAGkAcAB0AFAAYQB0AGgAIAAtAFAAYQB0AGgAVAB5AHAAZQAgAEwAZQBhAGYAKQAgAHsAIAAmACAAJABzAGMAcgBpAHAAdABQAGEAdABoADsAIABlAHgAaQB0ACAAJABMAEEAUwBUAEUAWABJAFQAQwBPAEQARQAgAH0AOwAgAFsAQwBvAG4AcwBvAGwAZQBdADoAOgBJAG4ALgBSAGUAYQBkAFQAbwBFAG4AZAAoACkAIAB8ACAATwB1AHQALQBOAHUAbABsADsAIABlAHgAaQB0ACAAMAA=; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi ;; *) \"$HOME/.orca/agent-hooks/claude-statusline.cmd\" ;; esac; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi ;; *) if [ -f \"$HOME/.orca/agent-hooks/claude-statusline.sh\" ] && [ -r \"$HOME/.orca/agent-hooks/claude-statusline.sh\" ] && [ -x \"$HOME/.orca/agent-hooks/claude-statusline.sh\" ]; then /bin/sh \"$HOME/.orca/agent-hooks/claude-statusline.sh\"; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi ;; esac; fi"
-  },
+  "model": "opus",
   "enabledPlugins": {
     "playwright@claude-plugins-official": true,
-    "rust-analyzer-lsp@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true
+    "rust-analyzer-lsp@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": false
   },
   "alwaysThinkingEnabled": false,
-  "effortLevel": "high",
+  "modelSettings": {
+    "claude-opus-5": {
+      "effortLevel": "xhigh"
+    },
+    "moonshotai.kimi-k3.1": {
+      "effortLevel": "medium"
+    }
+  },
   "autoUpdatesChannel": "latest",
+  "tui": "fullscreen",
   "showThinkingSummaries": true,
   "skipDangerousModePermissionPrompt": true,
   "skipAutoPermissionPrompt": true

@@ -20,8 +20,10 @@ func AnthropicToConverse(req *anthropic.Request, resolvedModel string, defaultMa
 		}
 	}
 
+	anthropicModel := isAnthropicModel(resolvedModel)
+
 	for _, m := range req.Messages {
-		blocks, err := anthropicBlocks(m.Content)
+		blocks, err := anthropicBlocks(m.Content, anthropicModel)
 		if err != nil {
 			return nil, err
 		}
@@ -47,12 +49,26 @@ func AnthropicToConverse(req *anthropic.Request, resolvedModel string, defaultMa
 		out.InferenceConfig.MaxTokens = &req.MaxTokens
 	}
 
-	anthropicModel := isAnthropicModel(resolvedModel)
 	if req.Thinking != nil {
-		if req.Thinking.Type == "enabled" {
+		switch req.Thinking.Type {
+		case "enabled":
 			out.ReasoningEffort = bedrock.EffortForBudget(req.Thinking.BudgetTokens)
-		} else {
+		case "adaptive":
+			out.ReasoningEffort = bedrock.EffortHigh
+		default:
 			out.ReasoningEffort = bedrock.EffortNone
+		}
+	}
+	// Explicit effort fields (Copilot's output_config.effort, reasoning_effort,
+	// or reasoning.effort) override any default thinking budget.
+	for _, rawEffort := range []string{
+		req.ReasoningEffort,
+		 outputConfigEffort(req.OutputConfig),
+		 reasoningObjEffort(req.Reasoning),
+	} {
+		if norm := bedrock.NormalizeEffort(rawEffort); norm != "" {
+			out.ReasoningEffort = norm
+			break
 		}
 	}
 	if req.TopK != nil && anthropicModel {
@@ -100,6 +116,20 @@ func AnthropicToConverse(req *anthropic.Request, resolvedModel string, defaultMa
 	return out, nil
 }
 
+func outputConfigEffort(cfg *anthropic.OutputConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	return cfg.Effort
+}
+
+func reasoningObjEffort(r *anthropic.Reasoning) string {
+	if r == nil {
+		return ""
+	}
+	return r.Effort
+}
+
 func anthropicToolChoice(raw json.RawMessage) *bedrock.ToolChoice {
 	if len(raw) == 0 {
 		return nil
@@ -124,7 +154,12 @@ func anthropicToolChoice(raw json.RawMessage) *bedrock.ToolChoice {
 	return nil
 }
 
-func anthropicBlocks(in []anthropic.ContentBlock) ([]bedrock.ContentBlock, error) {
+// anthropicBlocks converts inbound content blocks. Prior-turn thinking and
+// redacted_thinking blocks are only forwarded to Anthropic models: non-Anthropic
+// models on Converse (such as Kimi K3.1 and Kimi K3) reject signature fields
+// and fail with InternalServerException when earlier reasoning blocks are sent
+// back in multi-turn conversations.
+func anthropicBlocks(in []anthropic.ContentBlock, keepThinking bool) ([]bedrock.ContentBlock, error) {
 	var out []bedrock.ContentBlock
 	for _, b := range in {
 		switch b.Type {
@@ -134,14 +169,14 @@ func anthropicBlocks(in []anthropic.ContentBlock) ([]bedrock.ContentBlock, error
 			}
 
 		case "thinking":
-			if b.Thinking != "" {
+			if keepThinking && b.Thinking != "" {
 				out = append(out, bedrock.ContentBlock{ReasoningContent: &bedrock.ReasoningContent{
 					ReasoningText: &bedrock.ReasoningText{Text: b.Thinking, Signature: b.Signature},
 				}})
 			}
 
 		case "redacted_thinking":
-			if b.Data != "" {
+			if keepThinking && b.Data != "" {
 				out = append(out, bedrock.ContentBlock{ReasoningContent: &bedrock.ReasoningContent{
 					RedactedContent: b.Data,
 				}})

@@ -113,8 +113,15 @@ func OpenAIToConverse(req *openai.ChatRequest, resolvedModel string, defaultMaxT
 		}
 	}
 
-	out.ReasoningEffort = bedrock.NormalizeEffort(req.ReasoningEffort)
-	applyReasoning(out, resolvedModel, req.ReasoningEffort)
+	rawEffort := req.ReasoningEffort
+	if rawEffort == "" && req.OutputConfig != nil {
+		rawEffort = req.OutputConfig.Effort
+	}
+	if rawEffort == "" && req.Reasoning != nil {
+		rawEffort = req.Reasoning.Effort
+	}
+	out.ReasoningEffort = bedrock.NormalizeEffort(rawEffort)
+	applyReasoning(out, resolvedModel, out.ReasoningEffort)
 	return out, nil
 }
 

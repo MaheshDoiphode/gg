@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,12 +40,23 @@ func keyID(k *store.APIKey) string {
 	return k.ID
 }
 
-// applyEffortToConverse translates the hub's effort level into the extended
-// thinking block Anthropic models on Converse expect. Mantle models read
-// ReasoningEffort directly, so they need nothing here.
+// applyEffortToConverse translates the hub's effort level into the provider
+// fields Converse models expect: Anthropic models use extended thinking
+// budgets, while non-Anthropic reasoning models (such as Kimi K3/K3.1 on
+// Converse) take reasoning_effort in additionalModelRequestFields.
 func applyEffortToConverse(body *bedrock.ConverseRequest, modelID string) {
+	clampMaxTokensForModel(body, modelID)
 	effort := body.ReasoningEffort
-	if effort == "" || !convert.IsAnthropicModel(modelID) {
+	if effort == "" {
+		return
+	}
+	if !convert.IsAnthropicModel(modelID) {
+		if supportsConverseReasoningEffort(modelID) {
+			if body.AdditionalModelRequestFields == nil {
+				body.AdditionalModelRequestFields = map[string]any{}
+			}
+			body.AdditionalModelRequestFields["reasoning_effort"] = effort
+		}
 		return
 	}
 	budget := bedrock.BudgetForEffort(effort)
@@ -65,6 +77,79 @@ func applyEffortToConverse(body *bedrock.ConverseRequest, modelID string) {
 		if ic.MaxTokens == nil || *ic.MaxTokens <= budget {
 			ic.MaxTokens = bedrock.Ptr(budget + 4096)
 		}
+	}
+}
+
+func supportsConverseReasoningEffort(model string) bool {
+	l := strings.ToLower(model)
+	for _, p := range []string{"moonshot", "kimi", "zai.", "glm", "xai.", "grok", "openai.", "gpt", "deepseek", "qwen"} {
+		if strings.Contains(l, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// modelTokenLimits returns the total context window and per-response output
+// token ceiling for models that enforce input + max_tokens <= contextWindow.
+// Values come from AWS Bedrock model cards and runtime validation limits.
+func modelTokenLimits(model string) (contextWindow, maxOutput int) {
+	l := strings.ToLower(model)
+	switch {
+	case strings.Contains(l, "kimi-k3.1") || strings.Contains(l, "kimi-k3-1"):
+		// Kimi K3.1 Pro - Highspeed: 1M (1,048,576) shared context/output window.
+		return 1048576, 1048576
+	case strings.Contains(l, "kimi-k3"):
+		// Kimi K3: 1M (1,048,576) context window, 128,000 max output tokens.
+		return 1048576, 128000
+	case strings.Contains(l, "kimi-k2.5") || strings.Contains(l, "kimi-k2-5"):
+		// Kimi K2.5: 256K (262,144) shared context window.
+		return 262144, 262144
+	case strings.Contains(l, "glm-5") || strings.Contains(l, "glm-4.7"):
+		// GLM-5 / GLM-4.7: 200K (202,752) context window, 128K max output.
+		return 202752, 128000
+	case strings.Contains(l, "grok-4.6"):
+		// Grok 4.6: 500K context window.
+		return 500000, 131072
+	case strings.Contains(l, "grok-4.3"):
+		// Grok 4.3: 1M context window, 131,072 max_completion_tokens.
+		return 1000000, 131072
+	default:
+		return 0, 0
+	}
+}
+
+// clampMaxTokensForModel keeps InferenceConfig.MaxTokens inside both the
+// model's output ceiling and the remaining shared context window so clients
+// that send a fixed maxOutputTokens (such as VS Code Copilot on /v1/messages)
+// do not trigger a ValidationException as the prompt grows.
+func clampMaxTokensForModel(body *bedrock.ConverseRequest, modelID string) {
+	if body == nil || body.InferenceConfig == nil || body.InferenceConfig.MaxTokens == nil {
+		return
+	}
+	ctxLimit, outLimit := modelTokenLimits(modelID)
+	if ctxLimit == 0 && outLimit == 0 {
+		return
+	}
+	mt := *body.InferenceConfig.MaxTokens
+	if outLimit > 0 && mt > outLimit {
+		mt = outLimit
+	}
+	if ctxLimit > 0 {
+		// EstimateRequestTokens is rune-based; reserve 1.5x + 4096 tokens of
+		// framing/tokenizer headroom so input + maxTokens stays <= ctxLimit.
+		est := convert.EstimateRequestTokens(body)
+		reserved := est + est/2 + 4096
+		avail := ctxLimit - reserved
+		if avail < 1024 {
+			avail = 1024
+		}
+		if mt > avail {
+			mt = avail
+		}
+	}
+	if mt != *body.InferenceConfig.MaxTokens {
+		body.InferenceConfig.MaxTokens = bedrock.Ptr(mt)
 	}
 }
 

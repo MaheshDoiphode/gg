@@ -60,6 +60,66 @@ func wrongRoute(err error) bool {
 		strings.Contains(msg, "does not support the '/v1/chat/completions'")
 }
 
+// needsInferenceProfile reports Converse's rejection when a model requires a
+// cross-region inference profile (e.g. moonshotai.kimi-k3.1 -> global.moonshotai.kimi-k3.1).
+func needsInferenceProfile(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "on-demand throughput") ||
+		strings.Contains(msg, "inference profile that contains this model")
+}
+
+// mantleModelMissing reports a 404 from Mantle for a model that only exists on
+// Bedrock Runtime Converse (such as Kimi K3.1).
+func mantleModelMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "does not exist") ||
+		strings.Contains(msg, "is on neither mantle api") ||
+		strings.Contains(msg, "model_not_available")
+}
+
+// converseBlockedForAccount reports when Converse blocks a model that may
+// still be reachable on Mantle (e.g. xai.grok-4.6 under an SCP).
+func converseBlockedForAccount(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not available for this account") ||
+		strings.Contains(msg, "operation not allowed")
+}
+
+func (h *Handler) invokeConverse(r *http.Request, cred store.Credential, modelID string, body *bedrock.ConverseRequest, tr *trace, attempt int) (*bedrock.ConverseResponse, error) {
+	tr.attempt("converse", cred.Region, attempt)
+	applyConverseMaxTokens(body)
+	out, err := h.client.Converse(r.Context(), cred, modelID, body)
+	if needsInferenceProfile(err) && bedrock.StripGeo(modelID) == modelID {
+		profID := "global." + modelID
+		logx.Debugf("%s model %s requires an inference profile, retrying as %s", tr.id, modelID, profID)
+		tr.attempt("converse", cred.Region, attempt)
+		out, err = h.client.Converse(r.Context(), cred, profID, body)
+	}
+	return out, err
+}
+
+func (h *Handler) invokeConverseStream(r *http.Request, cred store.Credential, modelID string, body *bedrock.ConverseRequest, emitted func() bool, fn bedrock.StreamFunc, tr *trace, attempt int) error {
+	tr.attempt("converse stream", cred.Region, attempt)
+	applyConverseMaxTokens(body)
+	err := h.client.ConverseStream(r.Context(), cred, modelID, body, fn)
+	if needsInferenceProfile(err) && !emitted() && bedrock.StripGeo(modelID) == modelID {
+		profID := "global." + modelID
+		logx.Debugf("%s model %s requires an inference profile, retrying as %s", tr.id, modelID, profID)
+		tr.attempt("converse stream", cred.Region, attempt)
+		err = h.client.ConverseStream(r.Context(), cred, profID, body, fn)
+	}
+	return err
+}
+
 // applyConverseMaxTokens supplies a cap only for Converse, where some models
 // default to a very small output budget. Mantle models are left uncapped so
 // they can use their full output length.
@@ -82,29 +142,38 @@ func (h *Handler) callUpstream(r *http.Request, modelID string, body *bedrock.Co
 	err := h.converse(r, modelID, body, func(cred store.Credential) error {
 		attempt++
 		if h.registry.UpstreamFor(modelID) != bedrock.UpstreamMantle {
-			tr.attempt("converse", cred.Region, attempt)
-			applyConverseMaxTokens(body)
-			out, callErr := h.client.Converse(r.Context(), cred, modelID, body)
-			if callErr != nil {
+			out, callErr := h.invokeConverse(r, cred, modelID, body, tr, attempt)
+			if callErr == nil {
+				resp = out
+				return nil
+			}
+			if !converseBlockedForAccount(callErr) {
 				return callErr
 			}
-			resp = out
-			return nil
+			logx.Debugf("%s converse blocked %s (%v), trying mantle", tr.id, modelID, callErr)
 		}
 
-		if h.routes.get(modelID) != routeResponses {
+		mantleID := bedrock.StripGeo(modelID)
+		if h.routes.get(mantleID) != routeResponses {
 			tr.attempt("mantle chat/completions", bedrock.MantleRegionOf(cred), attempt)
 			out, callErr := h.client.MantleChat(r.Context(), cred,
-				convert.ConverseToOpenAIRequest(modelID, body, false))
+				convert.ConverseToOpenAIRequest(mantleID, body, false))
 			if callErr == nil {
-				h.routes.set(modelID, routeChat)
+				h.routes.set(mantleID, routeChat)
 				resp = convert.OpenAIResponseToConverse(out)
 				return nil
 			}
 			if !wrongRoute(callErr) {
+				if mantleModelMissing(callErr) && h.registry.UpstreamFor(modelID) == bedrock.UpstreamMantle {
+					logx.Debugf("%s mantle does not have %s (%v), trying converse", tr.id, mantleID, callErr)
+					if convOut, convErr := h.invokeConverse(r, cred, modelID, body, tr, attempt); convErr == nil {
+						resp = convOut
+						return nil
+					}
+				}
 				return callErr
 			}
-			logx.Debugf("%s chat/completions rejected %s, trying the responses API: %v", tr.id, modelID, callErr)
+			logx.Debugf("%s chat/completions rejected %s, trying the responses API: %v", tr.id, mantleID, callErr)
 			chatErr = callErr
 		}
 
@@ -113,7 +182,7 @@ func (h *Handler) callUpstream(r *http.Request, modelID string, body *bedrock.Co
 		var events []bedrock.StreamEvent
 		adapter := convert.NewResponsesStream()
 		callErr := h.client.ResponsesStream(r.Context(), cred,
-			convert.ConverseToResponsesRequest(modelID, body),
+			convert.ConverseToResponsesRequest(mantleID, body),
 			func(ev bedrock.ResponsesEvent) error {
 				out := adapter.Handle(ev)
 				for _, e := range out {
@@ -123,16 +192,24 @@ func (h *Handler) callUpstream(r *http.Request, modelID string, body *bedrock.Co
 				return nil
 			})
 		if callErr != nil {
-			return bothRoutesFailed(modelID, chatErr, callErr)
+			combined := bothRoutesFailed(mantleID, chatErr, callErr)
+			if mantleModelMissing(combined) && h.registry.UpstreamFor(modelID) == bedrock.UpstreamMantle {
+				logx.Debugf("%s mantle does not have %s (%v), trying converse", tr.id, mantleID, combined)
+				if convOut, convErr := h.invokeConverse(r, cred, modelID, body, tr, attempt); convErr == nil {
+					resp = convOut
+					return nil
+				}
+			}
+			return combined
 		}
 		if !adapter.Produced() {
-			return errEmptyUpstream(modelID)
+			return errEmptyUpstream(mantleID)
 		}
 		// Only trust the route once it has actually answered.
-		if h.routes.get(modelID) != routeResponses {
-			logx.Debugf("model %s answers on the responses API, not chat/completions", modelID)
+		if h.routes.get(mantleID) != routeResponses {
+			logx.Debugf("model %s answers on the responses API, not chat/completions", mantleID)
 		}
-		h.routes.set(modelID, routeResponses)
+		h.routes.set(mantleID, routeResponses)
 		events = append(events, adapter.Finish()...)
 		resp = convert.AggregateToConverse(events)
 		return nil
@@ -165,21 +242,16 @@ func (h *Handler) streamUpstream(r *http.Request, modelID string, body *bedrock.
 		var callErr error
 		attempt++
 
-		switch {
-		case h.registry.UpstreamFor(modelID) != bedrock.UpstreamMantle:
-			tr.attempt("converse stream", cred.Region, attempt)
-			applyConverseMaxTokens(body)
-			callErr = h.client.ConverseStream(r.Context(), cred, modelID, body, fn)
-
-		case h.routes.get(modelID) == routeResponses:
-			tr.attempt("mantle responses stream", bedrock.MantleRegionOf(cred), attempt)
-			callErr = h.streamResponses(r, cred, modelID, body, fn)
-
-		default:
+		mantleID := bedrock.StripGeo(modelID)
+		tryMantleStream := func() error {
+			if h.routes.get(mantleID) == routeResponses {
+				tr.attempt("mantle responses stream", bedrock.MantleRegionOf(cred), attempt)
+				return h.streamResponses(r, cred, mantleID, body, fn)
+			}
 			tr.attempt("mantle chat/completions stream", bedrock.MantleRegionOf(cred), attempt)
 			adapter := convert.NewMantleStream()
-			callErr = h.client.MantleChatStream(r.Context(), cred,
-				convert.ConverseToOpenAIRequest(modelID, body, true),
+			err := h.client.MantleChatStream(r.Context(), cred,
+				convert.ConverseToOpenAIRequest(mantleID, body, true),
 				func(chunk *openai.ChatResponse) error {
 					for _, ev := range adapter.Handle(chunk) {
 						if err := fn(ev); err != nil {
@@ -189,19 +261,36 @@ func (h *Handler) streamUpstream(r *http.Request, modelID string, body *bedrock.
 					return nil
 				})
 			// A route rejection arrives before any output, so switching is safe.
-			if wrongRoute(callErr) && !emitted() {
-				chatErr := callErr
-				logx.Debugf("%s chat/completions rejected %s, trying the responses API: %v", tr.id, modelID, chatErr)
+			if wrongRoute(err) && !emitted() {
+				chatErr := err
+				logx.Debugf("%s chat/completions rejected %s, trying the responses API: %v", tr.id, mantleID, chatErr)
 				tr.attempt("mantle responses stream", bedrock.MantleRegionOf(cred), attempt)
-				callErr = h.streamResponses(r, cred, modelID, body, fn)
+				err = h.streamResponses(r, cred, mantleID, body, fn)
 				switch {
-				case callErr == nil:
-					if h.routes.get(modelID) != routeResponses {
-						logx.Debugf("model %s answers on the responses API, not chat/completions", modelID)
+				case err == nil:
+					if h.routes.get(mantleID) != routeResponses {
+						logx.Debugf("model %s answers on the responses API, not chat/completions", mantleID)
 					}
-					h.routes.set(modelID, routeResponses)
+					h.routes.set(mantleID, routeResponses)
 				default:
-					callErr = bothRoutesFailed(modelID, chatErr, callErr)
+					err = bothRoutesFailed(mantleID, chatErr, err)
+				}
+			}
+			return err
+		}
+
+		if h.registry.UpstreamFor(modelID) != bedrock.UpstreamMantle {
+			callErr = h.invokeConverseStream(r, cred, modelID, body, emitted, fn, tr, attempt)
+			if callErr != nil && !emitted() && converseBlockedForAccount(callErr) {
+				logx.Debugf("%s converse stream blocked %s (%v), trying mantle", tr.id, modelID, callErr)
+				callErr = tryMantleStream()
+			}
+		} else {
+			callErr = tryMantleStream()
+			if callErr != nil && !emitted() && mantleModelMissing(callErr) {
+				logx.Debugf("%s mantle stream does not have %s (%v), trying converse", tr.id, mantleID, callErr)
+				if convErr := h.invokeConverseStream(r, cred, modelID, body, emitted, fn, tr, attempt); convErr == nil {
+					callErr = nil
 				}
 			}
 		}

@@ -17,6 +17,9 @@ const maxParamStripRetries = 3
 var rejectionHints = []string{
 	"unsupported", "not supported", "does not support",
 	"unknown", "unrecognized", "extraneous", "unexpected",
+	"invalid value", "input should be", "validation error",
+	"maximum context length", "exceeds the model limit", "exceeds model maximum",
+	"rejected by the target",
 }
 
 // dropRejectedParam removes one field that the model complained about and
@@ -68,6 +71,48 @@ func dropRejectedParam(body *bedrock.ConverseRequest, err error) string {
 		case len(ic.StopSequences) > 0 && mentions("stop_sequences", "stopsequences", "stop sequence"):
 			ic.StopSequences = nil
 			return "stop_sequences"
+		case ic.MaxTokens != nil && *ic.MaxTokens > 4096 && mentions("maximum context length", "exceeds the model limit", "exceeds model maximum", "rejected by the target"):
+			next := *ic.MaxTokens / 2
+			if next > 65536 {
+				next = 65536
+			}
+			if next < 4096 {
+				next = 4096
+			}
+			ic.MaxTokens = bedrock.Ptr(next)
+			return "max_tokens(clamped)"
+		}
+	}
+
+	// Clamp or strip reasoning_effort when a model supports a narrower set of
+	// levels (e.g. GLM-5/Kimi K2.5 cap at 'high', Grok 4.6 starts at 'low').
+	if body.ReasoningEffort != "" && mentions("reasoning_effort", "reasoning.effort", "supported values are", "input should be") {
+		switch {
+		case body.ReasoningEffort == bedrock.EffortXHigh && strings.Contains(msg, "'high'") && !strings.Contains(msg, "'xhigh'"):
+			body.ReasoningEffort = bedrock.EffortHigh
+			if body.AdditionalModelRequestFields != nil {
+				if _, ok := body.AdditionalModelRequestFields["reasoning_effort"]; ok {
+					body.AdditionalModelRequestFields["reasoning_effort"] = bedrock.EffortHigh
+				}
+			}
+			return "reasoning_effort(xhigh->high)"
+		case body.ReasoningEffort == bedrock.EffortNone && strings.Contains(msg, "'low'") && (strings.Contains(msg, "'none' is not supported") || !strings.Contains(msg, "'none'")):
+			body.ReasoningEffort = bedrock.EffortLow
+			if body.AdditionalModelRequestFields != nil {
+				if _, ok := body.AdditionalModelRequestFields["reasoning_effort"]; ok {
+					body.AdditionalModelRequestFields["reasoning_effort"] = bedrock.EffortLow
+				}
+			}
+			return "reasoning_effort(none->low)"
+		default:
+			body.ReasoningEffort = ""
+			if body.AdditionalModelRequestFields != nil {
+				delete(body.AdditionalModelRequestFields, "reasoning_effort")
+				if len(body.AdditionalModelRequestFields) == 0 {
+					body.AdditionalModelRequestFields = nil
+				}
+			}
+			return "reasoning_effort"
 		}
 	}
 

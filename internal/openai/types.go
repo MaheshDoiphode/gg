@@ -20,7 +20,19 @@ type ChatRequest struct {
 	Tools            []Tool          `json:"tools,omitempty"`
 	ToolChoice       json.RawMessage `json:"tool_choice,omitempty"`
 	ReasoningEffort  string          `json:"reasoning_effort,omitempty"`
+	Reasoning        *Reasoning      `json:"reasoning,omitempty"`
+	OutputConfig     *OutputConfig   `json:"output_config,omitempty"`
 	User             string          `json:"user,omitempty"`
+}
+
+// Reasoning carries nested effort (Responses format).
+type Reasoning struct {
+	Effort string `json:"effort,omitempty"`
+}
+
+// OutputConfig carries Anthropic Messages effort when sent to chat/completions.
+type OutputConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 // StreamOptions currently only carries include_usage.

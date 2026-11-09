@@ -98,6 +98,32 @@ func TestAnthropicOnlyFieldsAreNotSentToOtherProviders(t *testing.T) {
 	}
 }
 
+func TestAnthropicOutputConfigAndReasoningEffortFormats(t *testing.T) {
+	// Copilot sends output_config.effort when reasoningEffortFormat="messages".
+	out := mustConvertAnthropicFor(t, `{"model":"xai.grok-4.6","max_tokens":1000,
+		"output_config":{"effort":"xhigh"},
+		"messages":[{"role":"user","content":"x"}]}`, "xai.grok-4.6")
+	if out.ReasoningEffort != bedrock.EffortXHigh {
+		t.Errorf("output_config.effort -> %q, want %q", out.ReasoningEffort, bedrock.EffortXHigh)
+	}
+
+	// reasoning_effort top-level string when reasoningEffortFormat="chat-completions".
+	out = mustConvertAnthropicFor(t, `{"model":"moonshotai.kimi-k3.1","max_tokens":1000,
+		"reasoning_effort":"max",
+		"messages":[{"role":"user","content":"x"}]}`, "global.moonshotai.kimi-k3.1")
+	if out.ReasoningEffort != bedrock.EffortXHigh {
+		t.Errorf("reasoning_effort=max -> %q, want %q", out.ReasoningEffort, bedrock.EffortXHigh)
+	}
+
+	// reasoning.effort object when reasoningEffortFormat="responses".
+	out = mustConvertAnthropicFor(t, `{"model":"zai.glm-5","max_tokens":1000,
+		"reasoning":{"effort":"low"},
+		"messages":[{"role":"user","content":"x"}]}`, "zai.glm-5")
+	if out.ReasoningEffort != bedrock.EffortLow {
+		t.Errorf("reasoning.effort=low -> %q, want %q", out.ReasoningEffort, bedrock.EffortLow)
+	}
+}
+
 // Converse does not emit contentBlockStart for plain text, so the Anthropic
 // renderer has to open the block itself on the first delta.
 func TestAnthropicStreamOpensTextBlockLazily(t *testing.T) {

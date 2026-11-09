@@ -84,3 +84,22 @@ func TestDropRejectedParamRefusesAfterOutputStarted(t *testing.T) {
 		t.Fatal("body must not be modified once streaming has begun")
 	}
 }
+
+func TestDropRejectedParamClampsUnsupportedEffortLevels(t *testing.T) {
+	// GLM-5 / Kimi K2.5 reject xhigh and cap at high.
+	b1 := sampleBody()
+	b1.ReasoningEffort = bedrock.EffortXHigh
+	b1.AdditionalModelRequestFields["reasoning_effort"] = bedrock.EffortXHigh
+	got := dropRejectedParam(b1, validationErr("1 validation error for ChatCompletionRequest\nreasoning_effort\n  Input should be 'none', 'low', 'medium' or 'high'"))
+	if got != "reasoning_effort(xhigh->high)" || b1.ReasoningEffort != bedrock.EffortHigh || b1.AdditionalModelRequestFields["reasoning_effort"] != bedrock.EffortHigh {
+		t.Fatalf("xhigh clamp: got=%q effort=%q fields=%#v", got, b1.ReasoningEffort, b1.AdditionalModelRequestFields)
+	}
+
+	// Grok 4.6 rejects none and starts at low.
+	b2 := sampleBody()
+	b2.ReasoningEffort = bedrock.EffortNone
+	got = dropRejectedParam(b2, validationErr("Unsupported value: 'none' is not supported with the 'xai.grok-4.6' model. Supported values are: 'low', 'medium', 'high', and 'xhigh'."))
+	if got != "reasoning_effort(none->low)" || b2.ReasoningEffort != bedrock.EffortLow {
+		t.Fatalf("none clamp: got=%q effort=%q", got, b2.ReasoningEffort)
+	}
+}

@@ -32,14 +32,28 @@ type Registry struct {
 func (r *Registry) UpstreamFor(id string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	// Cross-region inference profile ids (global.*, us.*, eu.*, ...) and ARNs
+	// only exist on Converse; Mantle never accepts them.
+	if stripGeo(id) != id || strings.HasPrefix(id, "arn:") {
+		return UpstreamConverse
+	}
+	if e, ok := r.byID[id]; ok {
+		if e.ViaProfile {
+			return UpstreamConverse
+		}
+		if e.Upstream == UpstreamMantle || !store.PreferMantle() {
+			return e.Upstream
+		}
+	}
 	if store.PreferMantle() {
 		return UpstreamMantle
 	}
-	if e, ok := r.byID[id]; ok {
-		return e.Upstream
-	}
 	return UpstreamConverse
 }
+
+// StripGeo removes a leading cross-region inference profile prefix (global.,
+// us., eu., ...) when present.
+func StripGeo(id string) string { return stripGeo(id) }
 
 // Upstream identifies which Bedrock API serves a model.
 const (

@@ -17,6 +17,7 @@ var effortSuffixes = []struct{ suffix, level string }{
 	{EffortHigh, EffortHigh},
 	{EffortXHigh, EffortXHigh},
 	{"max", EffortXHigh},
+	{"ultra", EffortXHigh},
 	{"minimal", EffortNone},
 }
 
@@ -65,7 +66,7 @@ func NormalizeEffort(v string) string {
 		return EffortMedium
 	case "high":
 		return EffortHigh
-	case "max", "xhigh":
+	case "max", "xhigh", "ultra":
 		return EffortXHigh
 	default:
 		return ""
