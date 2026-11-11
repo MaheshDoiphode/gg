@@ -23,6 +23,16 @@ func AnthropicToConverse(req *anthropic.Request, resolvedModel string, defaultMa
 	anthropicModel := isAnthropicModel(resolvedModel)
 
 	for _, m := range req.Messages {
+		// Claude Code appends role "system" turns to messages; Converse only
+		// accepts them in the system field, and models reject a non-user last turn.
+		if m.Role != "user" && m.Role != "assistant" {
+			for _, b := range m.Content {
+				if b.Type == "text" && b.Text != "" {
+					out.System = append(out.System, bedrock.SystemBlock{Text: bedrock.Ptr(b.Text)})
+				}
+			}
+			continue
+		}
 		blocks, err := anthropicBlocks(m.Content, anthropicModel)
 		if err != nil {
 			return nil, err
@@ -63,8 +73,8 @@ func AnthropicToConverse(req *anthropic.Request, resolvedModel string, defaultMa
 	// or reasoning.effort) override any default thinking budget.
 	for _, rawEffort := range []string{
 		req.ReasoningEffort,
-		 outputConfigEffort(req.OutputConfig),
-		 reasoningObjEffort(req.Reasoning),
+		outputConfigEffort(req.OutputConfig),
+		reasoningObjEffort(req.Reasoning),
 	} {
 		if norm := bedrock.NormalizeEffort(rawEffort); norm != "" {
 			out.ReasoningEffort = norm

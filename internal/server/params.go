@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 
 	"bedrock-simple/internal/bedrock"
 )
@@ -15,11 +16,59 @@ const maxParamStripRetries = 3
 // rejectionHints are the phrases Bedrock uses when a model does not accept a
 // field that Converse itself allows.
 var rejectionHints = []string{
-	"unsupported", "not supported", "does not support",
+	"unsupported", "not supported", "does not support", "doesn't support",
 	"unknown", "unrecognized", "extraneous", "unexpected",
 	"invalid value", "input should be", "validation error",
 	"maximum context length", "exceeds the model limit", "exceeds model maximum",
 	"rejected by the target",
+}
+
+// rejectedParams remembers fields each model has refused, so later requests
+// skip them up front instead of paying a 400 round trip every time.
+type rejectedParams struct {
+	mu      sync.RWMutex
+	byModel map[string]map[string]bool
+}
+
+// learnable fields are request-independent; clamps and effort levels are not.
+func learnable(name string) bool {
+	return !strings.Contains(name, "(") && name != "reasoning_effort"
+}
+
+func (p *rejectedParams) learn(model, name string) {
+	if !learnable(name) {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.byModel == nil {
+		p.byModel = map[string]map[string]bool{}
+	}
+	if p.byModel[model] == nil {
+		p.byModel[model] = map[string]bool{}
+	}
+	p.byModel[model][name] = true
+}
+
+func (p *rejectedParams) apply(model string, body *bedrock.ConverseRequest) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for name := range p.byModel[model] {
+		if ic := body.InferenceConfig; ic != nil {
+			switch name {
+			case "temperature":
+				ic.Temperature = nil
+			case "top_p":
+				ic.TopP = nil
+			case "stop_sequences":
+				ic.StopSequences = nil
+			}
+		}
+		delete(body.AdditionalModelRequestFields, name)
+	}
+	if len(body.AdditionalModelRequestFields) == 0 {
+		body.AdditionalModelRequestFields = nil
+	}
 }
 
 // dropRejectedParam removes one field that the model complained about and

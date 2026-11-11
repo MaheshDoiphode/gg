@@ -98,6 +98,21 @@ func TestAnthropicOnlyFieldsAreNotSentToOtherProviders(t *testing.T) {
 	}
 }
 
+// Claude Code appends a role "system" turn after the user message; left in
+// messages it makes the last turn non-user, which Kimi K3.1 rejects.
+func TestAnthropicSystemRoleMessageIsHoisted(t *testing.T) {
+	out := mustConvertAnthropicFor(t, `{"model":"m","max_tokens":100,"system":"base",
+		"messages":[{"role":"user","content":"hi"},{"role":"system","content":"# Environment"}]}`,
+		"global.moonshotai.kimi-k3.1")
+
+	if len(out.Messages) != 1 || out.Messages[0].Role != "user" {
+		t.Fatalf("messages = %#v", out.Messages)
+	}
+	if len(out.System) != 2 || *out.System[1].Text != "# Environment" {
+		t.Fatalf("system = %#v", out.System)
+	}
+}
+
 func TestAnthropicOutputConfigAndReasoningEffortFormats(t *testing.T) {
 	// Copilot sends output_config.effort when reasoningEffortFormat="messages".
 	out := mustConvertAnthropicFor(t, `{"model":"xai.grok-4.6","max_tokens":1000,

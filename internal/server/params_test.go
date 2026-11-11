@@ -28,6 +28,7 @@ func TestDropRejectedParam(t *testing.T) {
 		name, message, want string
 	}{
 		{"grok temperature", "Unsupported parameter: 'temperature'", "temperature"},
+		{"kimi temperature", "This model doesn't support the temperature field. Remove temperature and try again.", "temperature"},
 		{"top_p", "The model does not support top_p", "top_p"},
 		{"top_k in additional fields", "Extraneous key [top_k] is not permitted", "top_k"},
 		{"stop sequences", "unsupported field stopSequences", "stop_sequences"},
@@ -82,6 +83,30 @@ func TestDropRejectedParamRefusesAfterOutputStarted(t *testing.T) {
 	}
 	if body.InferenceConfig.Temperature == nil {
 		t.Fatal("body must not be modified once streaming has begun")
+	}
+}
+
+func TestRejectedParamsAreRememberedPerModel(t *testing.T) {
+	var p rejectedParams
+	p.learn("m", "temperature")
+	p.learn("m", "top_k")
+	p.learn("m", "reasoning_effort")
+	p.learn("m", "max_tokens(clamped)")
+
+	body := sampleBody()
+	body.ReasoningEffort = bedrock.EffortHigh
+	p.apply("m", body)
+	if body.InferenceConfig.Temperature != nil || body.AdditionalModelRequestFields != nil {
+		t.Fatalf("learned fields not stripped: %#v", body)
+	}
+	if body.InferenceConfig.TopP == nil || *body.InferenceConfig.MaxTokens != 100 || body.ReasoningEffort != bedrock.EffortHigh {
+		t.Fatalf("stripped more than learned: %#v", body)
+	}
+
+	other := sampleBody()
+	p.apply("other", other)
+	if other.InferenceConfig.Temperature == nil {
+		t.Fatal("learning leaked to another model")
 	}
 }
 

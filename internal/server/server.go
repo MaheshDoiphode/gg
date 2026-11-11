@@ -23,6 +23,7 @@ type Handler struct {
 	client   *bedrock.Client
 	registry *bedrock.Registry
 	routes   *routeCache
+	rejected rejectedParams
 }
 
 // New builds the handler.
@@ -187,6 +188,7 @@ func (h *Handler) withCredential(ctx context.Context, fn func(cred store.Credent
 // place, so a retry sends the trimmed request.
 func (h *Handler) converse(r *http.Request, model string, body *bedrock.ConverseRequest, fn func(cred store.Credential) error) error {
 	var err error
+	h.rejected.apply(model, body)
 	for attempt := 0; attempt <= maxParamStripRetries; attempt++ {
 		err = h.withCredential(r.Context(), fn)
 		if err == nil {
@@ -196,6 +198,7 @@ func (h *Handler) converse(r *http.Request, model string, body *bedrock.Converse
 		if dropped == "" {
 			return err
 		}
+		h.rejected.learn(model, dropped)
 		logx.Warnf("%s model=%s rejected %q, retrying without it", r.URL.Path, model, dropped)
 	}
 	return err
@@ -278,13 +281,13 @@ func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	count, updated, lastErr := h.registry.Status()
 	snap := store.Snapshot()
 	body := map[string]any{
-		"status":             "ok",
-		"models":             count,
-		"credentials":        len(store.Credentials()),
-		"totalRequests":      snap.TotalRequests,
-		"totalFailures":      snap.TotalFailures,
-		"totalInputTokens":   snap.TotalInTokens,
-		"totalOutputTokens":  snap.TotalOutToken,
+		"status":            "ok",
+		"models":            count,
+		"credentials":       len(store.Credentials()),
+		"totalRequests":     snap.TotalRequests,
+		"totalFailures":     snap.TotalFailures,
+		"totalInputTokens":  snap.TotalInTokens,
+		"totalOutputTokens": snap.TotalOutToken,
 	}
 	if !updated.IsZero() {
 		body["modelsUpdatedAt"] = updated.UTC().Format(time.RFC3339)
